@@ -1,0 +1,216 @@
+export const translations = {
+  en: {
+    // Header
+    appTitle: 'Power BI Permissions Manager',
+    toggleDarkMode: 'Toggle Dark Mode',
+    language: 'Language',
+    
+    // Server Connection
+    serverConnection: 'Server Connection',
+    secureMode: 'Secure Mode:',
+    secureModeText: 'Credentials are securely stored on the server. Only server URI is required.',
+    reportServerUrl: 'Report Server URL',
+    selectServer: 'Select Server',
+    customUrl: 'Enter Custom URL...',
+    customServerUrl: 'Custom Report Server URL',
+    backToList: 'Back to List',
+    loadReports: 'Load Reports',
+    connecting: 'Connecting...',
+    
+    // Report Tree
+    reportsAndFolders: 'Reports & Folders',
+    reports: 'reports',
+    selected: 'selected',
+    searchPlaceholder: 'Search folders and reports by name...',
+    expandAll: 'Expand All',
+    collapseAll: 'Collapse All',
+    selectAll: 'Select All',
+    deselectAll: 'Deselect All',
+    folders: 'Folders',
+    autoSelectParents: 'Auto-select parent folders',
+    noMatch: 'No folders or reports match your search',
+    noReports: 'No reports available',
+    total: 'Total',
+    
+    // Permissions Panel
+    setUserAccess: 'Set User Access',
+    userNameOrGroup: 'User Name:',
+    usernamePlaceholder: 'DOMAIN\\username or username@domain.com (comma-separated for multiple)',
+    usernameHint: 'Enter one or more usernames separated by commas',
+    accessLevel: 'Access Role:',
+    selectRoles: 'Select Roles',
+    selectedItems: 'Selected Items',
+    noItemsSelected: 'No items selected. Check items in the tree view on the left.',
+    applyPermissions: 'Apply Permissions',
+    checkPermissions: 'Check Permissions',
+    showMore: 'Show More',
+    showLess: 'Show Less',
+    searchPlaceholder: 'Search...',
+    noItemsFound: 'No items found',
+    items: 'Item(s)',
+    applyingPermissions: 'Applying Permissions...',
+    applyingInfo: 'Applying permissions... This may take a while for many items.',
+    clearAll: 'Clear All',
+    permissionsBreakdown: 'Permissions Breakdown',
+    totalObjects: 'Total Objects',
+    
+    // AD Enhanced Features
+    viewDetails: 'View Details',
+    userDetails: 'User Details',
+    basicInformation: 'Basic Information',
+    organizationalHierarchy: 'Organizational Hierarchy',
+    directReports: 'Direct Reports',
+    groupMemberships: 'Group Memberships',
+    displayName: 'Display Name',
+    username: 'Username',
+    email: 'Email',
+    title: 'Title',
+    department: 'Department',
+    company: 'Company',
+    office: 'Office',
+    phone: 'Phone',
+    status: 'Status',
+    active: 'Active',
+    inactive: 'Inactive',
+    currentUser: 'Current',
+    level: 'Level',
+    groupMembers: 'Group Members',
+    members: 'members',
+    searchMembers: 'Search members...',
+    noMembersFound: 'No members found',
+    
+    // Roles
+    roleBrowser: 'Browser',
+    roleContentManager: 'Content Manager',
+    roleMyReports: 'My Reports',
+    rolePublisher: 'Publisher',
+    roleReportBuilder: 'Report Builder',
+    
+    // Messages
+    connectionSuccess: 'Connected! Found {count} reports',
+    connectionError: 'Connection failed',
+    selectAtLeastOne: 'Please select at least one report or folder',
+    enterUsername: 'Please enter a username',
+    selectAtLeastOneRole: 'Please select at least one role',
+    enterValidUsername: 'Please enter at least one valid username',
+    permissionsSuccess: 'Successfully applied permissions! ({count} operations)',
+    permissionsError: 'Completed with errors: {success} succeeded, {failed} failed',
+    permissionsFailed: 'Failed to apply permissions: {error}',
+    
+    // Loading & Empty States
+    loading: 'Loading reports from server...',
+    noReportsFound: 'No reports found on this server',
+    
+    // Confirmation
+    confirmApply: 'Apply {roles} role(s) to {users} user(s) for {reports} report(s) and {folders} folder(s)?\\n\\nTotal operations: {total}\\n\\nThis will modify permissions on the server.',
+  },
+  
+  fa: {
+    // Header
+    appTitle: 'مدیریت دسترسی‌های Power BI',
+    toggleDarkMode: 'تغییر حالت تاریک',
+    language: 'زبان',
+    
+    // Server Connection
+    serverConnection: 'اتصال به سرور',
+    secureMode: 'حالت امن:',
+    secureModeText: 'اطلاعات ورود به صورت امن در سرور ذخیره شده است. فقط آدرس سرور مورد نیاز است.',
+    reportServerUrl: 'آدرس سرور گزارش',
+    selectServer: 'انتخاب سرور',
+    customUrl: 'وارد کردن آدرس سفارشی...',
+    customServerUrl: 'آدرس سفارشی سرور گزارش',
+    backToList: 'بازگشت به لیست',
+    loadReports: 'بارگذاری گزارش‌ها',
+    connecting: 'در حال اتصال...',
+    
+    // Report Tree
+    reportsAndFolders: 'گزارش‌ها و پوشه‌ها',
+    reports: 'گزارش',
+    selected: 'انتخاب شده',
+    searchPlaceholder: 'جستجوی پوشه‌ها و گزارش‌ها بر اساس نام...',
+    expandAll: 'باز کردن همه',
+    collapseAll: 'بستن همه',
+    selectAll: 'انتخاب همه',
+    deselectAll: 'لغو انتخاب همه',
+    folders: 'پوشه‌ها',
+    autoSelectParents: 'انتخاب خودکار پوشه‌های والد',
+    noMatch: 'هیچ پوشه یا گزارشی با جستجوی شما مطابقت ندارد',
+    noReports: 'هیچ گزارشی در دسترس نیست',
+    total: 'مجموع',
+    
+    // Permissions Panel
+    setUserAccess: 'تنظیم دسترسی کاربر',
+    userNameOrGroup: 'نام کاربری:',
+    usernamePlaceholder: 'DOMAIN\\username یا username@domain.com (با کاما برای چند کاربر)',
+    usernameHint: 'یک یا چند نام کاربری را با کاما از هم جدا کنید',
+    accessLevel: 'نقش دسترسی:',
+    selectRoles: 'انتخاب نقش‌ها',
+    selectedItems: 'موارد انتخاب شده',
+    noItemsSelected: 'هیچ موردی انتخاب نشده است. موارد را در نمای درختی سمت چپ علامت بزنید.',
+    applyPermissions: 'اعمال مجوزها',
+    checkPermissions: 'بررسی مجوزها',
+    showMore: 'نمایش بیشتر',
+    showLess: 'نمایش کمتر',
+    searchPlaceholder: 'جستجو...',
+    noItemsFound: 'موردی یافت نشد',
+    items: 'مورد',
+    applyingPermissions: 'در حال اعمال مجوزها...',
+    applyingInfo: 'در حال اعمال مجوزها... این ممکن است برای موارد زیاد کمی زمان ببرد.',
+    clearAll: 'پاک کردن همه',
+    permissionsBreakdown: 'جزئیات مجوزها',
+    totalObjects: 'مجموع اشیاء',
+    
+    // AD Enhanced Features
+    viewDetails: 'مشاهده جزئیات',
+    userDetails: 'جزئیات کاربر',
+    basicInformation: 'اطلاعات پایه',
+    organizationalHierarchy: 'سلسله مراتب سازمانی',
+    directReports: 'زیرمجموعه‌های مستقیم',
+    groupMemberships: 'عضویت در گروه‌ها',
+    displayName: 'نام نمایشی',
+    username: 'نام کاربری',
+    email: 'ایمیل',
+    title: 'عنوان شغلی',
+    department: 'دپارتمان',
+    company: 'شرکت',
+    office: 'دفتر',
+    phone: 'تلفن',
+    status: 'وضعیت',
+    active: 'فعال',
+    inactive: 'غیرفعال',
+    currentUser: 'جاری',
+    level: 'سطح',
+    groupMembers: 'اعضای گروه',
+    members: 'عضو',
+    searchMembers: 'جستجوی اعضا...',
+    noMembersFound: 'هیچ عضوی یافت نشد',
+    
+    // Roles
+    roleBrowser: 'مرورگر',
+    roleContentManager: 'مدیر محتوا',
+    roleMyReports: 'گزارش‌های من',
+    rolePublisher: 'ناشر',
+    roleReportBuilder: 'سازنده گزارش',
+    
+    // Messages
+    connectionSuccess: 'متصل شد! {count} گزارش یافت شد',
+    connectionError: 'اتصال ناموفق بود',
+    selectAtLeastOne: 'لطفاً حداقل یک گزارش یا پوشه انتخاب کنید',
+    enterUsername: 'لطفاً نام کاربری را وارد کنید',
+    selectAtLeastOneRole: 'لطفاً حداقل یک نقش انتخاب کنید',
+    enterValidUsername: 'لطفاً حداقل یک نام کاربری معتبر وارد کنید',
+    permissionsSuccess: 'مجوزها با موفقیت اعمال شد! ({count} عملیات)',
+    permissionsError: 'تکمیل شد با خطا: {success} موفق، {failed} ناموفق',
+    permissionsFailed: 'اعمال مجوزها ناموفق بود: {error}',
+    
+    // Loading & Empty States
+    loading: 'در حال بارگذاری گزارش‌ها از سرور...',
+    noReportsFound: 'هیچ گزارشی در این سرور یافت نشد',
+    
+    // Confirmation
+    confirmApply: 'اعمال {roles} نقش به {users} کاربر برای {reports} گزارش و {folders} پوشه؟\\n\\nمجموع عملیات: {total}\\n\\nاین عمل مجوزها را در سرور تغییر می‌دهد.',
+  }
+}
+
+export default translations
+

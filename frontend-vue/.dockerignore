@@ -1,0 +1,68 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn.lock
+package-lock.json
+
+# Build output
+dist
+build
+.output
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.editorconfig
+
+# OS
+.DS_Store
+Thumbs.db
+.cache
+
+# Test and coverage
+coverage
+.nyc_output
+test
+tests
+__tests__
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+# nginx.conf - NEEDED for Docker build, do not exclude!
+
+# Documentation
+README.md
+*.md
+docs
+
+# Logs
+*.log
+logs
+
+# Vite
+vite.config.js.timestamp-*
+

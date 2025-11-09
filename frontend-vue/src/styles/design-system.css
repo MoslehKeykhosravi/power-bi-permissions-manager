@@ -1,0 +1,367 @@
+/**
+ * DESIGN SYSTEM - Reusable CSS Rules
+ * Use these classes for consistent styling across the application
+ */
+
+/* ============================================
+   ICON SIZES
+   ============================================ */
+.icon-xs { width: 14px; height: 14px; }
+.icon-sm { width: 16px; height: 16px; }
+.icon-md { width: 20px; height: 20px; }
+.icon-lg { width: 24px; height: 24px; }
+.icon-xl { width: 32px; height: 32px; }
+
+/* ============================================
+   FONT SIZES
+   ============================================ */
+.text-xs { font-size: 0.75rem; }    /* 12px */
+.text-sm { font-size: 0.875rem; }   /* 14px */
+.text-base { font-size: 0.95rem; }  /* 15.2px */
+.text-md { font-size: 1rem; }       /* 16px */
+.text-lg { font-size: 1.125rem; }   /* 18px */
+.text-xl { font-size: 1.25rem; }    /* 20px */
+
+/* ============================================
+   BUTTON BASE STYLES
+   ============================================ */
+.btn-base {
+  font-family: inherit;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* ============================================
+   BUTTON SIZES
+   ============================================ */
+.btn-xs {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  min-height: 24px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.875rem;
+  min-height: 32px;
+}
+
+.btn-md {
+  padding: 8px 16px;
+  font-size: 0.95rem;
+  min-height: 36px;
+}
+
+.btn-lg {
+  padding: 10px 20px;
+  font-size: 1rem;
+  min-height: 42px;
+}
+
+/* ============================================
+   ICON BUTTONS (Square)
+   ============================================ */
+.btn-icon-xs {
+  padding: 4px;
+  width: 24px;
+  height: 24px;
+}
+
+.btn-icon-sm {
+  padding: 6px;
+  width: 32px;
+  height: 32px;
+}
+
+.btn-icon-md {
+  padding: 8px;
+  width: 36px;
+  height: 36px;
+}
+
+.btn-icon-lg {
+  padding: 10px;
+  width: 42px;
+  height: 42px;
+}
+
+/* ============================================
+   BUTTON VARIANTS - Minimal Style
+   ============================================ */
+.btn-minimal {
+  background: transparent;
+  color: #6b7280;
+}
+
+.btn-minimal:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+  color: #111827;
+}
+
+.btn-minimal.active {
+  background: rgba(0, 0, 0, 0.08);
+  color: #111827;
+}
+
+.dark-mode .btn-minimal {
+  color: #9ca3af;
+}
+
+.dark-mode .btn-minimal:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f9fafb;
+}
+
+.dark-mode .btn-minimal.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f9fafb;
+}
+
+/* ============================================
+   BUTTON VARIANTS - With Border
+   ============================================ */
+.btn-bordered {
+  background: transparent;
+  color: #6b7280;
+  border: 1px solid var(--border-color);
+}
+
+.btn-bordered:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+  color: #111827;
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.dark-mode .btn-bordered {
+  color: #9ca3af;
+}
+
+.dark-mode .btn-bordered:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f9fafb;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================
+   BUTTON VARIANTS - Primary
+   ============================================ */
+.btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+/* ============================================
+   BUTTON VARIANTS - Success
+   ============================================ */
+.btn-success {
+  background: #4caf50;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #45a049;
+}
+
+/* ============================================
+   BUTTON VARIANTS - Danger
+   ============================================ */
+.btn-danger {
+  background: #f44336;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #d32f2f;
+}
+
+/* ============================================
+   BUTTON STATE - Disabled
+   ============================================ */
+.btn-base:disabled,
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================
+   SPACING SYSTEM
+   ============================================ */
+.gap-xs { gap: 0.25rem; }  /* 4px */
+.gap-sm { gap: 0.5rem; }   /* 8px */
+.gap-md { gap: 0.75rem; }  /* 12px */
+.gap-lg { gap: 1rem; }     /* 16px */
+.gap-xl { gap: 1.5rem; }   /* 24px */
+
+.p-xs { padding: 0.25rem; }
+.p-sm { padding: 0.5rem; }
+.p-md { padding: 0.75rem; }
+.p-lg { padding: 1rem; }
+.p-xl { padding: 1.5rem; }
+
+.m-xs { margin: 0.25rem; }
+.m-sm { margin: 0.5rem; }
+.m-md { margin: 0.75rem; }
+.m-lg { margin: 1rem; }
+.m-xl { margin: 1.5rem; }
+
+/* ============================================
+   BORDER RADIUS
+   ============================================ */
+.rounded-sm { border-radius: 4px; }
+.rounded-md { border-radius: 6px; }
+.rounded-lg { border-radius: 8px; }
+.rounded-xl { border-radius: 12px; }
+.rounded-full { border-radius: 9999px; }
+
+/* ============================================
+   SHADOWS
+   ============================================ */
+.shadow-sm { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }
+.shadow-md { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+.shadow-lg { box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15); }
+
+/* ============================================
+   TRANSITIONS
+   ============================================ */
+.transition-fast { transition: all 0.15s ease; }
+.transition-normal { transition: all 0.2s ease; }
+.transition-slow { transition: all 0.3s ease; }
+
+/* ============================================
+   FLEX UTILITIES
+   ============================================ */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.flex-row { flex-direction: row; }
+.items-center { align-items: center; }
+.items-start { align-items: flex-start; }
+.items-end { align-items: flex-end; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.justify-start { justify-content: flex-start; }
+.justify-end { justify-content: flex-end; }
+
+/* ============================================
+   CUSTOM CHECKBOX
+   ============================================ */
+.custom-checkbox {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.checkbox-input {
+  position: absolute;
+  opacity: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.checkbox-box {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  background: white;
+}
+
+.dark-mode .checkbox-box {
+  background: #2c2c2c;
+  border-color: #555;
+}
+
+.checkbox-input:checked + .checkbox-box {
+  background: var(--text-color);
+  border-color: var(--text-color);
+}
+
+.checkbox-checkmark {
+  color: white;
+  animation: checkmarkPop 0.2s ease;
+}
+
+.dark-mode .checkbox-checkmark {
+  color: #1e1e1e;
+}
+
+.checkbox-input:hover + .checkbox-box {
+  border-color: #9ca3af;
+}
+
+.dark-mode .checkbox-input:hover + .checkbox-box {
+  border-color: #888;
+}
+
+@keyframes checkmarkPop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   USAGE EXAMPLES
+   ============================================ */
+
+/*
+  BUTTON EXAMPLES:
+  
+  Minimal icon button:
+  <button class="btn-base btn-minimal btn-icon-md">
+    <svg class="icon-md">...</svg>
+  </button>
+  
+  Bordered button with text:
+  <button class="btn-base btn-bordered btn-md">
+    <svg class="icon-sm">...</svg>
+    <span class="text-base">Click me</span>
+  </button>
+  
+  Primary action button:
+  <button class="btn-base btn-primary btn-lg">
+    Save Changes
+  </button>
+  
+  Active state button:
+  <button class="btn-base btn-minimal btn-icon-md active">
+    <svg class="icon-md">...</svg>
+  </button>
+  
+  CHECKBOX EXAMPLE:
+  
+  Custom minimal checkbox:
+  <label class="custom-checkbox">
+    <input type="checkbox" :checked="isChecked" @change="handleChange" class="checkbox-input" />
+    <span class="checkbox-box">
+      <svg v-if="isChecked" class="checkbox-checkmark" width="12" height="12">
+        <path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </span>
+  </label>
+*/
+

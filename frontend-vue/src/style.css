@@ -1,0 +1,478 @@
+/* Reset and Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none; /* Prevent text selection cursor everywhere */
+  cursor: default; /* Default cursor instead of text cursor */
+}
+
+/* Allow text selection only in specific elements */
+input,
+textarea,
+[contenteditable="true"],
+.allow-select {
+  user-select: text;
+  cursor: text;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Persian/Farsi Font Support */
+[lang="fa"], [dir="rtl"] {
+  font-family: 'Tahoma', 'Iranian Sans', 'Segoe UI', 'Roboto', sans-serif;
+}
+
+/* CSS Variables */
+:root {
+  --primary-color: #1976d2;
+  --primary-dark: #1565c0;
+  --primary-light: #42a5f5;
+  --background-light: #f5f5f5;
+  --background-dark: #1e1e1e;
+  --card-bg-light: #ffffff;
+  --card-bg-dark: #2c2c2c;
+  --text-light: #333333;
+  --text-dark: #ffffff;
+  --border-light: #e0e0e0;
+  --border-dark: #555555;
+  --hover-bg-light: rgba(0, 0, 0, 0.05);
+  --hover-bg-dark: rgba(255, 255, 255, 0.1);
+}
+
+/* Dark Mode Colors */
+.dark-mode {
+  --text-color: var(--text-dark);
+  --bg-color: var(--background-dark);
+  --card-bg: var(--card-bg-dark);
+  --border-color: var(--border-dark);
+  --hover-bg: var(--hover-bg-dark);
+}
+
+body:not(.dark-mode) {
+  --text-color: var(--text-light);
+  --bg-color: var(--background-light);
+  --card-bg: var(--card-bg-light);
+  --border-color: var(--border-light);
+  --hover-bg: var(--hover-bg-light);
+}
+
+body {
+  color: var(--text-color);
+  background: var(--bg-color);
+}
+
+/* RTL Support */
+[dir="rtl"] {
+  direction: rtl;
+}
+
+[dir="ltr"] {
+  direction: ltr;
+}
+
+/* Card Styles */
+.card {
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.dark-mode .card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Form Elements */
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-color);
+  transition: border-color 0.3s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+input::placeholder {
+  color: #999;
+}
+
+/* RTL Input Direction */
+[dir="rtl"] input,
+[dir="rtl"] select,
+[dir="rtl"] textarea {
+  text-align: right;
+}
+
+[dir="ltr"] input,
+[dir="ltr"] select,
+[dir="ltr"] textarea {
+  text-align: left;
+}
+
+/* Buttons - Unified Style */
+button {
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  background: transparent;
+  color: #6b7280;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+  color: #111827;
+}
+
+.dark-mode button {
+  color: #9ca3af;
+}
+
+.dark-mode button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f9fafb;
+}
+
+/* Primary button variant */
+button.primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+/* Secondary button variant */
+button.secondary {
+  background: #e0e0e0;
+  color: #333;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: #d0d0d0;
+}
+
+.dark-mode button.secondary {
+  background: #444;
+  color: white;
+}
+
+.dark-mode button.secondary:hover:not(:disabled) {
+  background: #555;
+}
+
+/* Form Groups */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+/* RTL Form Groups */
+[dir="rtl"] .form-group label {
+  text-align: right;
+}
+
+/* Headings */
+h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+/* Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background-light);
+}
+
+.dark-mode ::-webkit-scrollbar-track {
+  background: var(--background-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #aaa;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb {
+  background: #555;
+}
+
+.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* RTL Scrollbar (for Firefox) */
+[dir="rtl"] {
+  scrollbar-color: #ccc var(--background-light);
+}
+
+[dir="rtl"].dark-mode {
+  scrollbar-color: #555 var(--background-dark);
+}
+
+/* Utility Classes */
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.gap-1 {
+  gap: 0.5rem;
+}
+
+.gap-2 {
+  gap: 1rem;
+}
+
+.mb-1 {
+  margin-bottom: 0.5rem;
+}
+
+.mb-2 {
+  margin-bottom: 1rem;
+}
+
+.mt-1 {
+  margin-top: 0.5rem;
+}
+
+.mt-2 {
+  margin-top: 1rem;
+}
+
+/* RTL Utilities */
+[dir="rtl"] .ml-auto {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+[dir="ltr"] .ml-auto {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+[dir="rtl"] .mr-auto {
+  margin-right: 0;
+  margin-left: auto;
+}
+
+[dir="ltr"] .mr-auto {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .card {
+    padding: 1rem;
+  }
+
+  h1 {
+    font-size: 1.25rem;
+  }
+
+  h2 {
+    font-size: 1.1rem;
+  }
+}
+
+/* RTL-specific adjustments for icons and badges */
+[dir="rtl"] .badge {
+  margin-left: 0.5rem;
+  margin-right: 0;
+}
+
+[dir="ltr"] .badge {
+  margin-left: 0;
+  margin-right: 0.5rem;
+}
+
+/* RTL Flex Direction Adjustments */
+[dir="rtl"] .flex-row-reverse {
+  flex-direction: row-reverse;
+}
+
+/* Make sure checkboxes appear on the right in RTL */
+[dir="rtl"] input[type="checkbox"] {
+  margin-left: 0.5rem;
+  margin-right: 0;
+}
+
+[dir="ltr"] input[type="checkbox"] {
+  margin-left: 0;
+  margin-right: 0.5rem;
+}
+
+/* Ensure text inputs respect RTL */
+[dir="rtl"] .search-box input,
+[dir="rtl"] .text-input {
+  padding-right: 40px;
+  padding-left: 10px;
+}
+
+[dir="ltr"] .search-box input,
+[dir="ltr"] .text-input {
+  padding-left: 40px;
+  padding-right: 10px;
+}
+
+/* Search icon position for RTL */
+[dir="rtl"] .search-icon {
+  right: 12px;
+  left: auto;
+}
+
+[dir="ltr"] .search-icon {
+  left: 12px;
+  right: auto;
+}
+
+/* Clear button position for RTL */
+[dir="rtl"] .clear-search {
+  left: 8px;
+  right: auto;
+}
+
+[dir="ltr"] .clear-search {
+  right: 8px;
+  left: auto;
+}
+
+/* Dropdown arrow for RTL */
+[dir="rtl"] .dropdown-arrow {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+[dir="ltr"] .dropdown-arrow {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* Tree view indentation for RTL */
+[dir="rtl"] .node-children {
+  margin-right: 24px;
+  margin-left: 0;
+  border-right: 1px dotted #ddd;
+  border-left: none;
+  padding-right: 8px;
+  padding-left: 0;
+}
+
+[dir="ltr"] .node-children {
+  margin-left: 24px;
+  margin-right: 0;
+  border-left: 1px dotted #ddd;
+  border-right: none;
+  padding-left: 8px;
+  padding-right: 0;
+}
+
+/* Alert borders for RTL */
+[dir="rtl"] .info-alert,
+[dir="rtl"] .error-alert {
+  border-right: 4px solid;
+  border-left: none;
+}
+
+[dir="ltr"] .info-alert,
+[dir="ltr"] .error-alert {
+  border-left: 4px solid;
+  border-right: none;
+}
+
+/* Ensure proper text alignment */
+[dir="rtl"] p,
+[dir="rtl"] span,
+[dir="rtl"] label,
+[dir="rtl"] div {
+  text-align: right;
+}
+
+[dir="ltr"] p,
+[dir="ltr"] span,
+[dir="ltr"] label,
+[dir="ltr"] div {
+  text-align: left;
+}
+
+/* Exception for center-aligned elements */
+.text-center,
+.empty-state,
+.loading-card {
+  text-align: center !important;
+}
