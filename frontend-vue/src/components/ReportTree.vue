@@ -119,6 +119,7 @@
           :node-id="'server-root'"
           :expanded="expandedSet"
           :checked="checkedSet"
+          :marked-for-removal="markedForRemovalSet"
           :server-name="serverAddress"
           :editing-node-id="editingNodeId"
           :editing-value="editingValue"
@@ -172,6 +173,8 @@ const props = defineProps({
 const searchText = ref('')
 const expanded = ref(['server-root'])
 const checked = ref([])
+const markedForRemoval = ref([]) // Items marked with red X for removal
+const originalPermissions = ref([]) // Items user originally had access to (from Check Permissions)
 const autoSelectParents = ref(false)
 const editingNodeId = ref(null)
 const editingValue = ref('')
@@ -183,6 +186,8 @@ const serverAddress = computed(() => {
 
 const expandedSet = computed(() => new Set(expanded.value))
 const checkedSet = computed(() => new Set(checked.value))
+const markedForRemovalSet = computed(() => new Set(markedForRemoval.value))
+const originalPermissionsSet = computed(() => new Set(originalPermissions.value))
 
 // Build tree structure - EXACT IMPLEMENTATION FROM REACT
 const treeComputed = computed(() => {
@@ -338,6 +343,8 @@ const folderMap = computed(() => treeComputed.value.folderMap)
 watch(() => props.reports, () => {
   // Clear all selections when reports are reloaded
   checked.value = []
+  markedForRemoval.value = []
+  originalPermissions.value = []
   expanded.value = ['server-root']
 }, { deep: false })
 
@@ -377,8 +384,9 @@ watch(() => props.permissionsData, (newPermissions) => {
     return
   }
   
-  // Clear current selection
+  // Clear current selection and marked items
   checked.value = []
+  markedForRemoval.value = []
   
   // Map permissions to node IDs and check them
   const newCheckedIds = []
@@ -399,11 +407,42 @@ watch(() => props.permissionsData, (newPermissions) => {
   })
   
   checked.value = newCheckedIds
+  // Store as original permissions (what user currently has)
+  originalPermissions.value = [...newCheckedIds]
 }, { deep: true })
 
-// Notify parent of selected items
-watch(checked, () => {
+// Notify parent of selected items (excluding marked for removal)
+watch([checked, markedForRemoval, originalPermissions], () => {
+  const markedSet = new Set(markedForRemoval.value)
+  const originalSet = new Set(originalPermissions.value)
+  
+  // Items to keep/add (checked but not marked, excluding unchanged original permissions)
   const selectedItems = checked.value
+    .filter(id => {
+      if (id === 'server-root') return false
+      if (markedSet.has(id)) return false // Exclude marked
+      // Only include if it's NEW (not in original) or if we want to keep all checked
+      // For optimization, we could filter out unchanged items here
+      return true
+    })
+    .map(id => {
+      if (id.startsWith('report_')) {
+        const reportId = id.replace('report_', '')
+        return props.reports.find(r => r.id === reportId)
+      } else if (id.startsWith('folder_')) {
+        const folderPath = id.replace('folder_', '')
+        return {
+          type: 'Folder',
+          path: folderPath,
+          name: folderPath.split('/').pop()
+        }
+      }
+      return null
+    })
+    .filter(item => item !== null)
+
+  // Items marked for removal
+  const markedItems = markedForRemoval.value
     .filter(id => id !== 'server-root')
     .map(id => {
       if (id.startsWith('report_')) {
@@ -421,7 +460,26 @@ watch(checked, () => {
     })
     .filter(item => item !== null)
 
-  props.onItemsSelected(selectedItems)
+  // New items (checked but not in original and not marked)
+  const newItems = checked.value
+    .filter(id => id !== 'server-root' && !markedSet.has(id) && !originalSet.has(id))
+    .map(id => {
+      if (id.startsWith('report_')) {
+        const reportId = id.replace('report_', '')
+        return props.reports.find(r => r.id === reportId)
+      } else if (id.startsWith('folder_')) {
+        const folderPath = id.replace('folder_', '')
+        return {
+          type: 'Folder',
+          path: folderPath,
+          name: folderPath.split('/').pop()
+        }
+      }
+      return null
+    })
+    .filter(item => item !== null)
+
+  props.onItemsSelected(selectedItems, markedItems, newItems, originalPermissions.value)
 }, { deep: true })
 
 const selectedItems = computed(() => {
@@ -485,33 +543,86 @@ const getDescendantIds = (node) => {
   return ids
 }
 
-const handleCheck = ({ nodeId, node, isChecked }) => {
+const handleCheck = ({ nodeId, node, isChecked, isMarkedForRemoval }) => {
   const checkedSet = new Set(checked.value)
+  const markedSet = new Set(markedForRemoval.value)
+  const originalSet = new Set(originalPermissions.value)
   const isReport = node.nodeType === 'report' || nodeId.startsWith('report_')
 
-  if (!isChecked) {
-    // CHECKING
-    checkedSet.add(nodeId)
+  // Check if this item is in the original permissions (user already had access)
+  const wasOriginallyChecked = originalSet.has(nodeId)
 
-    // Check all descendants
-    const descendantIds = getDescendantIds(node)
-    descendantIds.forEach(id => checkedSet.add(id))
-
-    // Auto-select parents if enabled
-    if (autoSelectParents.value && isReport) {
-      const parentIds = folderMap.value.get(nodeId) || []
-      parentIds.forEach(id => checkedSet.add(id))
+  if (wasOriginallyChecked) {
+    // FOR ITEMS USER ALREADY HAS ACCESS TO:
+    // Toggle between Checked (keep) and Marked (remove)
+    // Cannot be completely unchecked
+    
+    if (isMarkedForRemoval) {
+      // State: Marked -> Checked (keep existing permission)
+      markedSet.delete(nodeId)
+      // Stay checked (don't remove from checkedSet)
+      
+      // Also unmark descendants if they were originally checked
+      const descendantIds = getDescendantIds(node)
+      descendantIds.forEach(id => {
+        if (originalSet.has(id)) {
+          markedSet.delete(id)
+        }
+      })
+    } else if (isChecked) {
+      // State: Checked -> Marked (remove existing permission)
+      markedSet.add(nodeId)
+      
+      // Mark descendants for removal too if they were originally checked
+      const descendantIds = getDescendantIds(node)
+      descendantIds.forEach(id => {
+        if (originalSet.has(id)) {
+          markedSet.add(id)
+        }
+      })
     }
   } else {
-    // UNCHECKING
-    checkedSet.delete(nodeId)
-
-    // Uncheck all descendants
-    const descendantIds = getDescendantIds(node)
-    descendantIds.forEach(id => checkedSet.delete(id))
+    // FOR ITEMS USER DOESN'T HAVE ACCESS TO:
+    // Can be checked (add) or unchecked (don't add)
+    // Cannot be marked with X (can't remove what they don't have)
+    
+    if (isChecked) {
+      // State: Checked -> Unchecked (don't add new permission)
+      checkedSet.delete(nodeId)
+      
+      // Uncheck descendants that aren't in original permissions
+      const descendantIds = getDescendantIds(node)
+      descendantIds.forEach(id => {
+        if (!originalSet.has(id)) {
+          checkedSet.delete(id)
+        }
+      })
+    } else {
+      // State: Unchecked -> Checked (add new permission)
+      checkedSet.add(nodeId)
+      
+      // Check descendants that aren't in original permissions
+      const descendantIds = getDescendantIds(node)
+      descendantIds.forEach(id => {
+        if (!originalSet.has(id)) {
+          checkedSet.add(id)
+        }
+      })
+      
+      // Auto-select parents if enabled
+      if (autoSelectParents.value && isReport) {
+        const parentIds = folderMap.value.get(nodeId) || []
+        parentIds.forEach(id => {
+          if (!originalSet.has(id)) {
+            checkedSet.add(id)
+          }
+        })
+      }
+    }
   }
 
   checked.value = Array.from(checkedSet)
+  markedForRemoval.value = Array.from(markedSet)
 }
 
 const handleToggle = (nodeId) => {
@@ -535,6 +646,7 @@ const selectAll = () => {
 
 const deselectAll = () => {
   checked.value = []
+  markedForRemoval.value = []
   lastAction.value = 'deselect'
 }
 

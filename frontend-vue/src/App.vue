@@ -148,6 +148,9 @@
           <div class="card permissions-panel">
             <PermissionsPanel
               :selected-items="selectedItems"
+              :marked-for-removal-items="markedForRemovalItems"
+              :new-items="newItems"
+              :original-permission-ids="originalPermissionIds"
               :connection-info="connectionInfo"
               :on-success="showSuccessToast"
               :on-error="showErrorToast"
@@ -190,6 +193,9 @@ const connected = ref(false)
 const reports = ref([])
 const connectionInfo = ref({})
 const selectedItems = ref([])
+const markedForRemovalItems = ref([])
+const newItems = ref([]) // New items to add permissions (not in original)
+const originalPermissionIds = ref([]) // IDs of items user originally had
 const serverList = ref([])
 const selectedServer = ref('')
 const customUrl = ref('')
@@ -340,8 +346,11 @@ const handleConnect = async () => {
   }
 }
 
-const handleItemsSelected = (items) => {
+const handleItemsSelected = (items, markedItems = [], newItemsList = [], originalIds = []) => {
   selectedItems.value = items
+  markedForRemovalItems.value = markedItems
+  newItems.value = newItemsList
+  originalPermissionIds.value = originalIds
 }
 
 const reloadReports = async () => {

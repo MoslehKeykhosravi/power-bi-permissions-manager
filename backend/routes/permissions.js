@@ -412,6 +412,11 @@ router.post('/set', async (req, res) => {
     // Build new policies array
     const policies = [];
     let userExists = false;
+    const isRemovalRequest = roles.length === 0; // Empty roles array = remove permissions
+
+    if (isRemovalRequest) {
+      console.log(`  🗑️  REMOVAL REQUEST: Removing all permissions for "${userName}"`);
+    }
 
     if (existingPolicies && existingPolicies.Policies) {
       console.log(`  Found ${existingPolicies.Policies.length} existing policies`);
@@ -420,33 +425,40 @@ router.post('/set', async (req, res) => {
         const inputUserName = userName.toLowerCase();
 
         if (policyUserName.includes(inputUserName) || inputUserName.includes(policyUserName)) {
-          // Update existing user - add new roles
-          const existingRoleNames = (policy.Roles || []).map(r => r.Name || r);
-          const newRoles = roles.filter(r => !existingRoleNames.includes(r));
+          userExists = true;
           
-          if (newRoles.length === 0) {
-            console.log(`  User already has all requested roles`);
+          if (isRemovalRequest) {
+            // REMOVE: Don't add this user to the policies array
+            console.log(`  ✓ Removing user "${policy.GroupUserName}" from policies`);
+            // Simply don't push this policy - effectively removing the user
+            return;
+          } else {
+            // UPDATE: Add new roles to existing user
+            const existingRoleNames = (policy.Roles || []).map(r => r.Name || r);
+            const newRoles = roles.filter(r => !existingRoleNames.includes(r));
+            
+            if (newRoles.length === 0) {
+              console.log(`  User already has all requested roles`);
+              policies.push({
+                GroupUserName: policy.GroupUserName,
+                Roles: policy.Roles
+              });
+              return;
+            }
+
+            const allRoles = [...policy.Roles];
+            newRoles.forEach(roleName => {
+              if (roleDefinitions[roleName]) {
+                allRoles.push(roleDefinitions[roleName]);
+              }
+            });
+
             policies.push({
               GroupUserName: policy.GroupUserName,
-              Roles: policy.Roles
+              Roles: allRoles
             });
-            userExists = true;
-            return;
+            console.log(`  Updated user "${policy.GroupUserName}" with new roles: ${newRoles.join(', ')}`);
           }
-
-          const allRoles = [...policy.Roles];
-          newRoles.forEach(roleName => {
-            if (roleDefinitions[roleName]) {
-              allRoles.push(roleDefinitions[roleName]);
-            }
-          });
-
-          policies.push({
-            GroupUserName: policy.GroupUserName,
-            Roles: allRoles
-          });
-          userExists = true;
-          console.log(`  Updated user "${policy.GroupUserName}" with new roles: ${newRoles.join(', ')}`);
         } else {
           // Keep other users as-is
           policies.push({
@@ -457,8 +469,8 @@ router.post('/set', async (req, res) => {
       });
     }
 
-    if (!userExists) {
-      // Add new user
+    if (!userExists && !isRemovalRequest) {
+      // Add new user (only if not a removal request)
       const roleObjects = roles.map(roleName => roleDefinitions[roleName]).filter(r => r);
       if (roleObjects.length > 0) {
         policies.push({
@@ -467,6 +479,12 @@ router.post('/set', async (req, res) => {
         });
         console.log(`  Adding new user "${userName}" with roles: ${roles.join(', ')}`);
       }
+    } else if (!userExists && isRemovalRequest) {
+      console.log(`  ⚠️  User "${userName}" not found in existing policies - nothing to remove`);
+    }
+
+    if (isRemovalRequest && userExists) {
+      console.log(`  ✓ User will be removed. New policy count: ${policies.length}`);
     }
 
     console.log(`  Total policies to send: ${policies.length}`);

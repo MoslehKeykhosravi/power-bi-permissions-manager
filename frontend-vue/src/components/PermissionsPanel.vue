@@ -543,6 +543,18 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  markedForRemovalItems: {
+    type: Array,
+    default: () => []
+  },
+  newItems: {
+    type: Array,
+    default: () => []
+  },
+  originalPermissionIds: {
+    type: Array,
+    default: () => []
+  },
   connectionInfo: {
     type: Object,
     default: () => ({})
@@ -1109,9 +1121,12 @@ const closeGroupMembersModal = () => {
 }
 
 const handleApplyPermissions = async () => {
-  if (props.selectedItems.length === 0) {
+  // Validate: must have either new items or marked for removal items
+  const hasChanges = props.newItems.length > 0 || props.markedForRemovalItems.length > 0
+  
+  if (!hasChanges) {
     if (props.onError) {
-      props.onError(t('selectAtLeastOne'))
+      props.onError('No changes to apply. All checked items already have the selected permissions.')
     }
     return
   }
@@ -1133,15 +1148,47 @@ const handleApplyPermissions = async () => {
     return
   }
 
-  const totalOperations = userNames.length * props.selectedItems.length
+  // Show confirmation for marked items (items to remove permissions)
+  if (props.markedForRemovalItems && props.markedForRemovalItems.length > 0) {
+    const itemsList = props.markedForRemovalItems.slice(0, 5).map(item => {
+      const icon = item.type === 'Folder' ? '📁' : '📊'
+      return `${icon} ${item.name || item.path.split('/').pop()}`
+    }).join('\n')
+    
+    const moreText = props.markedForRemovalItems.length > 5 
+      ? `\n... and ${props.markedForRemovalItems.length - 5} more items` 
+      : ''
+    
+    const removeConfirmMsg = `⚠️ REMOVE PERMISSIONS WARNING\n\n` +
+      `You are about to REMOVE permissions for user(s) from ${props.markedForRemovalItems.length} item(s):\n\n` +
+      `${itemsList}${moreText}\n\n` +
+      `This action will revoke access to these items.\n\n` +
+      `Do you want to continue?`
 
-  const confirmMsg = t('confirmApply', {
-    roles: selectedRoles.value.length,
-    users: userNames.length,
-    reports: reportCount.value,
-    folders: folderCount.value,
-    total: totalOperations
-  })
+    if (!window.confirm(removeConfirmMsg)) {
+      return
+    }
+  }
+
+  // Show confirmation for new items
+  let confirmMsg = ''
+  if (props.newItems.length > 0 && props.markedForRemovalItems.length > 0) {
+    confirmMsg = `Apply ${selectedRoles.value.length} role(s) to:\n` +
+      `- ${props.newItems.length} new item(s) (add permissions)\n` +
+      `- ${props.markedForRemovalItems.length} item(s) (remove permissions)\n\n` +
+      `For ${userNames.length} user(s).\n\n` +
+      `Existing permissions will NOT be changed.\n\n` +
+      `Continue?`
+  } else if (props.newItems.length > 0) {
+    confirmMsg = `Add ${selectedRoles.value.length} role(s) to ${props.newItems.length} new item(s)\n` +
+      `for ${userNames.length} user(s).\n\n` +
+      `Existing permissions will NOT be changed.\n\n` +
+      `Continue?`
+  } else {
+    confirmMsg = `Remove permissions from ${props.markedForRemovalItems.length} item(s)\n` +
+      `for ${userNames.length} user(s).\n\n` +
+      `Continue?`
+  }
 
   if (!window.confirm(confirmMsg)) {
     return
@@ -1154,37 +1201,87 @@ const handleApplyPermissions = async () => {
   const errors = []
 
   try {
-    for (const user of userNames) {
-      for (const item of props.selectedItems) {
-        try {
-          const itemType = item.type === 'Folder' ? 'Folder' : 'Report'
+    // ONLY apply permissions to NEW items (not items that already have permissions)
+    if (props.newItems && props.newItems.length > 0) {
+      for (const user of userNames) {
+        for (const item of props.newItems) {
+          try {
+            const itemType = item.type === 'Folder' ? 'Folder' : 'Report'
 
-          const response = await axios.post('/api/permissions/set', {
-            serverUri: props.connectionInfo.serverUri,
-            itemId: item.id,
-            itemPath: item.path || item.fullPath,
-            userName: user,
-            roles: selectedRoles.value,
-            itemType: itemType
-          })
+            const response = await axios.post('/api/permissions/set', {
+              serverUri: props.connectionInfo.serverUri,
+              itemId: item.id,
+              itemPath: item.path || item.fullPath,
+              userName: user,
+              roles: selectedRoles.value,
+              itemType: itemType
+            })
 
-          if (response.data.success) {
-            successCount++
-          } else {
+            if (response.data.success) {
+              successCount++
+            } else {
+              failCount++
+              errors.push(`${user} → ${item.name}: Failed to add`)
+            }
+          } catch (err) {
             failCount++
-            errors.push(`${user} → ${item.name}: Failed`)
+            errors.push(`${user} → ${item.name}: ${err.message}`)
           }
-        } catch (err) {
-          failCount++
-          errors.push(`${user} → ${item.name}: ${err.message}`)
         }
       }
     }
 
+    // Remove permissions from marked items
+    if (props.markedForRemovalItems && props.markedForRemovalItems.length > 0) {
+      for (const user of userNames) {
+        for (const item of props.markedForRemovalItems) {
+          try {
+            const itemType = item.type === 'Folder' ? 'Folder' : 'Report'
+
+            // Remove permissions by setting empty roles array
+            const response = await axios.post('/api/permissions/set', {
+              serverUri: props.connectionInfo.serverUri,
+              itemId: item.id,
+              itemPath: item.path || item.fullPath,
+              userName: user,
+              roles: [], // Empty array means remove all permissions
+              itemType: itemType
+            })
+
+            if (response.data.success) {
+              successCount++
+            } else {
+              failCount++
+              errors.push(`${user} → ${item.name}: Failed to remove`)
+            }
+          } catch (err) {
+            failCount++
+            errors.push(`${user} → ${item.name}: ${err.message}`)
+          }
+        }
+      }
+    }
+
+    const totalChanged = props.newItems.length + props.markedForRemovalItems.length
+    
     if (failCount === 0) {
       if (props.onSuccess) {
-        props.onSuccess(t('permissionsSuccess', { count: successCount }))
+        const message = props.newItems.length > 0 && props.markedForRemovalItems.length > 0
+          ? `Successfully updated ${successCount} permissions (${props.newItems.length} added, ${props.markedForRemovalItems.length} removed)`
+          : props.newItems.length > 0
+            ? `Successfully added ${successCount} permissions`
+            : `Successfully removed ${successCount} permissions`
+        props.onSuccess(message)
       }
+      
+      // AUTO-REFRESH: Re-check permissions after successful changes
+      // This updates the "original permissions" state so next operation works correctly
+      console.log('🔄 Auto-refreshing permissions after successful update...')
+      setTimeout(async () => {
+        await handleCheckPermissions()
+        console.log('✓ Permissions refreshed')
+      }, 1000) // Wait 1 second for server to propagate changes
+      
     } else {
       if (props.onError) {
         props.onError(t('permissionsError', { success: successCount, failed: failCount }))

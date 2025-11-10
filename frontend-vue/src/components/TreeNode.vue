@@ -18,7 +18,7 @@
         </span>
         <span v-else class="expand-spacer"></span>
 
-        <!-- Custom Checkbox -->
+        <!-- Custom Checkbox with 3 states -->
         <label class="custom-checkbox" @click.stop>
           <input
             type="checkbox"
@@ -26,10 +26,13 @@
             @change="handleCheckChange"
             class="checkbox-input"
           />
-          <span class="checkbox-box">
-            <svg v-if="isChecked" class="checkbox-checkmark" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <span class="checkbox-box" :class="{ 'marked-removal': isMarkedForRemoval }">
+            <!-- Checkmark for checked items -->
+            <svg v-if="isChecked && !isMarkedForRemoval" class="checkbox-checkmark" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
+            <!-- Red asterisk for marked for removal -->
+            <span v-if="isMarkedForRemoval" class="removal-mark">×</span>
           </span>
         </label>
 
@@ -80,6 +83,7 @@
         :node-id="getChildNodeId(childNode, key)"
         :expanded="expanded"
         :checked="checked"
+        :marked-for-removal="markedForRemoval"
         :editing-node-id="editingNodeId"
         :editing-value="editingValue"
         @toggle="$emit('toggle', $event)"
@@ -117,6 +121,10 @@ const props = defineProps({
     type: Set,
     default: () => new Set()
   },
+  markedForRemoval: {
+    type: Set,
+    default: () => new Set()
+  },
   serverName: {
     type: String,
     default: 'Report Server'
@@ -145,6 +153,10 @@ const isExpanded = computed(() => {
 
 const isChecked = computed(() => {
   return props.checked.has(props.nodeId)
+})
+
+const isMarkedForRemoval = computed(() => {
+  return props.markedForRemoval.has(props.nodeId)
 })
 
 const isEditing = computed(() => {
@@ -204,7 +216,8 @@ const handleCheckChange = (event) => {
   emit('check', {
     nodeId: props.nodeId,
     node: props.node,
-    isChecked: isChecked.value
+    isChecked: isChecked.value,
+    isMarkedForRemoval: isMarkedForRemoval.value
   })
 }
 
@@ -440,5 +453,47 @@ const handleBlur = () => {
 
 .dark-mode .node-children {
   border-left-color: #555;
+}
+
+/* Marked for removal styles */
+.checkbox-box.marked-removal {
+  background: #ffebee !important;
+  border-color: #f44336 !important;
+}
+
+.dark-mode .checkbox-box.marked-removal {
+  background: #3a1f1f !important;
+  border-color: #ef5350 !important;
+}
+
+.removal-mark {
+  color: #f44336;
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 1;
+  animation: removalPulse 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.dark-mode .removal-mark {
+  color: #ef5350;
+}
+
+@keyframes removalPulse {
+  0% {
+    transform: scale(0.5) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.3) rotate(90deg);
+  }
+  100% {
+    transform: scale(1) rotate(180deg);
+    opacity: 1;
+  }
 }
 </style>
