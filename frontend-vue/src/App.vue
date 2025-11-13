@@ -179,7 +179,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import ReportTree from './components/ReportTree.vue'
 import PermissionsPanel from './components/PermissionsPanel.vue'
