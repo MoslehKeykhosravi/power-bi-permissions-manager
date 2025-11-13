@@ -460,9 +460,34 @@ watch(autoSelectParents, () => {
       parentIds.forEach(id => checkedSet.add(id))
     })
 
+    // Always check server-root when auto-select is enabled
+    checkedSet.add('server-root')
+
     checked.value = Array.from(checkedSet)
   }
 })
+
+// Ensure server-root is checked when auto-select is enabled and any item is checked
+watch([checked, autoSelectParents], () => {
+  if (autoSelectParents.value && checked.value.length > 0) {
+    const checkedSet = new Set(checked.value)
+    const hasServerRoot = checkedSet.has('server-root')
+    
+    if (!hasServerRoot) {
+      checkedSet.add('server-root')
+      checked.value = Array.from(checkedSet)
+      
+      // Auto-add Browser role for server-root if not already set
+      if (!itemRoles.value.has('server-root')) {
+        const serverRoles = permissionsMap.value.get('/') || ['Browser']
+        itemRoles.value.set('server-root', serverRoles)
+        if (props.onRoleChanges) {
+          props.onRoleChanges(new Map(itemRoles.value))
+        }
+      }
+    }
+  }
+}, { deep: true })
 
 // Clean up stale checked items that don't exist in current tree
 watch(allNodeIds, () => {
@@ -992,6 +1017,15 @@ const handleCheck = ({ nodeId, node, isChecked, isMarkedForRemoval }) => {
             }
           }
         })
+        // Always check server-root when auto-select is enabled
+        if (!originalSet.has('server-root')) {
+          checkedSet.add('server-root')
+          // Auto-add Browser role for server-root if not already set
+          if (!itemRoles.value.has('server-root')) {
+            const serverRoles = permissionsMap.value.get('/') || ['Browser']
+            itemRoles.value.set('server-root', serverRoles)
+          }
+        }
       }
       
       // Notify parent of role changes
@@ -1056,6 +1090,10 @@ const toggleAllType = (type, shouldSelect) => {
               typeIds.push(id)
             }
           })
+          // Always include server-root when auto-select is enabled
+          if (!typeIds.includes('server-root')) {
+            typeIds.push('server-root')
+          }
         }
       }
     })
