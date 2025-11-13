@@ -266,32 +266,44 @@ const isEditing = computed(() => {
 const currentRoles = computed(() => {
   // First check itemRoles (user-edited roles) - these override permissions data
   if (props.itemRoles && props.itemRoles.has(props.nodeId)) {
-    return props.itemRoles.get(props.nodeId)
+    const roles = props.itemRoles.get(props.nodeId)
+    // Return roles if they exist (even if empty array)
+    if (roles !== null && roles !== undefined) {
+      return Array.isArray(roles) ? roles : []
+    }
   }
   
   // Then check permissionsMap (from checked permissions)
   if (props.permissionsMap && props.permissionsMap.size > 0) {
-    const path = props.node.type === 'folder' 
-      ? props.node.path 
-      : props.node.path || props.node.fullPath || ''
-    // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
-    const normalizePath = (p) => {
-      return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
-    }
-    const normalizedPath = normalizePath(path)
-    // Try exact match first
-    let roles = props.permissionsMap.get(normalizedPath)
-    // If not found, try case-insensitive match (but preserve Unicode)
-    if (!roles) {
-      for (const [mapPath, mapRoles] of props.permissionsMap.entries()) {
-        if (normalizePath(mapPath) === normalizedPath) {
-          roles = mapRoles
-          break
+    // Handle server-root specially - it represents the home page "/"
+    if (props.nodeId === 'server-root') {
+      const roles = props.permissionsMap.get('/')
+      if (roles && roles.length > 0) {
+        return roles
+      }
+    } else {
+      const path = props.node.type === 'folder' 
+        ? props.node.path 
+        : props.node.path || props.node.fullPath || ''
+      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+      const normalizePath = (p) => {
+        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+      }
+      const normalizedPath = normalizePath(path)
+      // Try exact match first
+      let roles = props.permissionsMap.get(normalizedPath)
+      // If not found, try case-insensitive match (but preserve Unicode)
+      if (!roles) {
+        for (const [mapPath, mapRoles] of props.permissionsMap.entries()) {
+          if (normalizePath(mapPath) === normalizedPath) {
+            roles = mapRoles
+            break
+          }
         }
       }
-    }
-    if (roles && roles.length > 0) {
-      return roles
+      if (roles && roles.length > 0) {
+        return roles
+      }
     }
   }
   

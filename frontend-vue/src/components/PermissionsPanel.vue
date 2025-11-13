@@ -626,8 +626,11 @@ watch([() => hasActualChanges.value, () => props.selectedItems.length, () => sel
 watch(() => props.selectedItems, (selectedItems) => {
   // Check if there are any new items (not in original permissions)
   const hasNewItems = selectedItems.some(item => {
-    const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-    return !props.originalPermissionIds.includes(nodeId)
+    // Handle server-root specially - it uses 'server-root' as nodeId but path is '/'
+    const nodeId = item.path === '/' ? 'server-root' : (item.id ? `report_${item.id}` : `folder_${item.path}`)
+    // Check both nodeId and folder_/ for server-root
+    return !props.originalPermissionIds.includes(nodeId) && 
+           !(item.path === '/' && props.originalPermissionIds.includes('folder_/'))
   })
   
   if (hasNewItems && selectedRoles.value.length === 0) {
@@ -837,8 +840,15 @@ const originalPermissionsMap = computed(() => {
     
     // Find the nodeId for this permission
     if (permission.itemType === 'Folder') {
-      const nodeId = `folder_${permission.path}`
-      map.set(nodeId, roles)
+      const normalizedPath = normalizePath(path)
+      // Handle server root (path '/') specially - it uses 'server-root' as nodeId
+      if (normalizedPath === '/') {
+        map.set('server-root', roles)
+        map.set('folder_/', roles) // Also store with folder_/ for backward compatibility
+      } else {
+        const nodeId = `folder_${permission.path}`
+        map.set(nodeId, roles)
+      }
     } else if (permission.itemType === 'Report') {
       // Try to find report by ID first (most reliable, especially for Persian characters)
       let report = null
@@ -944,8 +954,13 @@ const hasActualRoleChanges = computed(() => {
     // This indicates items that originally had permissions but are now being removed
     if (props.selectedItems && props.selectedItems.length > 0) {
       for (const item of props.selectedItems) {
-        const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-        if (originalMap.has(nodeId) && (!props.itemRoles || !props.itemRoles.has(nodeId))) {
+        // Handle server-root specially - it uses 'server-root' as nodeId but path is '/'
+        const nodeId = item.path === '/' ? 'server-root' : (item.id ? `report_${item.id}` : `folder_${item.path}`)
+        // Check both the nodeId and folder_/ for server-root
+        const hasInOriginal = originalMap.has(nodeId) || (item.path === '/' && originalMap.has('folder_/'))
+        const hasInItemRoles = props.itemRoles && (props.itemRoles.has(nodeId) || (item.path === '/' && props.itemRoles.has('server-root')))
+        
+        if (hasInOriginal && !hasInItemRoles) {
           // This item originally had permissions but is no longer in itemRoles
           // This is a removal, so there's a change
           console.log('✅ [hasActualRoleChanges] Found removal: item in originalMap but not in itemRoles', {
@@ -960,9 +975,24 @@ const hasActualRoleChanges = computed(() => {
     return false
   }
   
+  // Helper function to get the nodeId for an item (handles server-root specially)
+  const getNodeIdForItem = (item) => {
+    if (item.path === '/') {
+      return 'server-root' // Server root uses 'server-root' as nodeId
+    }
+    return item.id ? `report_${item.id}` : `folder_${item.path}`
+  }
+  
   // Check each item in itemRoles to see if it's different from original
   for (const [nodeId, currentRoles] of props.itemRoles.entries()) {
-    const originalRoles = originalMap.get(nodeId) || []
+    // For server-root, check both 'server-root' and 'folder_/' in originalMap
+    let originalRoles = []
+    if (nodeId === 'server-root') {
+      // Check both keys for server-root
+      originalRoles = originalMap.get('server-root') || originalMap.get('folder_/') || []
+    } else {
+      originalRoles = originalMap.get(nodeId) || []
+    }
     
     // Normalize roles arrays for comparison (sort and compare)
     const normalizeRoles = (roles) => {
@@ -990,17 +1020,33 @@ const hasActualRoleChanges = computed(() => {
   for (const [nodeId, originalRoles] of originalMap.entries()) {
     if (originalRoles && originalRoles.length > 0) {
       // If this item had original permissions but is not in itemRoles, it's a removal
-      if (!props.itemRoles.has(nodeId)) {
+      // Check both the nodeId and server-root mapping
+      // Also check if it has empty roles (which means removal)
+      const hasInItemRoles = props.itemRoles.has(nodeId) || 
+                            (nodeId === 'folder_/' && props.itemRoles.has('server-root'))
+      const hasEmptyRoles = (nodeId === 'folder_/' && props.itemRoles.has('server-root') && 
+                            (!props.itemRoles.get('server-root') || props.itemRoles.get('server-root').length === 0)) ||
+                            (props.itemRoles.has(nodeId) && 
+                            (!props.itemRoles.get(nodeId) || props.itemRoles.get(nodeId).length === 0))
+      
+      if (!hasInItemRoles || hasEmptyRoles) {
         // Check if this item is in selectedItems (meaning it's still selected but roles were removed)
         const itemExists = props.selectedItems && props.selectedItems.some(item => {
-          const itemNodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-          return itemNodeId === nodeId
+          const itemNodeId = item.path === '/' ? 'server-root' : (item.id ? `report_${item.id}` : `folder_${item.path}`)
+          return itemNodeId === nodeId || 
+                 (nodeId === 'folder_/' && itemNodeId === 'server-root') ||
+                 (nodeId === 'server-root' && itemNodeId === 'server-root')
         })
-        if (itemExists) {
+        // For server-root with empty roles, always detect as change even if not in selectedItems
+        const isServerRootWithEmptyRoles = (nodeId === 'folder_/' || nodeId === 'server-root') && hasEmptyRoles
+        if (itemExists || isServerRootWithEmptyRoles) {
           // Item is selected but not in itemRoles - this means all roles were removed
           console.log('✅ [hasActualRoleChanges] Found removal: item in originalMap and selectedItems but not in itemRoles', {
             nodeId,
-            originalRoles: originalRoles.join(',')
+            originalRoles: originalRoles.join(','),
+            hasEmptyRoles,
+            isServerRootWithEmptyRoles,
+            itemExists
           })
           return true
         }
@@ -1013,13 +1059,16 @@ const hasActualRoleChanges = computed(() => {
   // but might have been removed from itemRoles entirely
   if (props.markedForRemovalItems && props.markedForRemovalItems.length > 0) {
     for (const item of props.markedForRemovalItems) {
-      const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-      if (originalMap.has(nodeId)) {
-        const originalRoles = originalMap.get(nodeId) || []
+      // Handle server-root specially - it uses 'server-root' as nodeId but path is '/'
+      const nodeId = item.path === '/' ? 'server-root' : (item.id ? `report_${item.id}` : `folder_${item.path}`)
+      // Check both nodeId and folder_/ for server-root
+      const hasInOriginal = originalMap.has(nodeId) || (item.path === '/' && originalMap.has('folder_/'))
+      if (hasInOriginal) {
+        const originalRoles = originalMap.get(nodeId) || (item.path === '/' ? originalMap.get('folder_/') : []) || []
         if (originalRoles && originalRoles.length > 0) {
           // This item originally had permissions and is now marked for removal
           // Check if it's in itemRoles with empty array, or not in itemRoles at all
-          const currentRoles = props.itemRoles?.get(nodeId)
+          const currentRoles = props.itemRoles?.get(nodeId) || (item.path === '/' ? props.itemRoles?.get('server-root') : null)
           if (!currentRoles || currentRoles.length === 0) {
             // Item is marked for removal and has no roles (or empty array) - this is a change
             console.log('✅ [hasActualRoleChanges] Found removal: item in markedForRemovalItems with original permissions', {
@@ -1456,7 +1505,10 @@ const handleApplyPermissions = async () => {
   const itemsRemovingAllRoles = [] // Items where all roles are removed (empty roles array)
   const markedForRemovalNodeIds = new Set()
   props.markedForRemovalItems.forEach(item => {
-    if (item.id) {
+    // Handle server-root specially
+    if (item.path === '/') {
+      markedForRemovalNodeIds.add('server-root')
+    } else if (item.id) {
       markedForRemovalNodeIds.add(`report_${item.id}`)
     } else if (item.path) {
       markedForRemovalNodeIds.add(`folder_${item.path}`)
@@ -1468,15 +1520,22 @@ const handleApplyPermissions = async () => {
     // We need to map nodeIds to actual items
     // Check both selectedItems and originalPermissionIds to find items
     props.itemRoles.forEach((roles, nodeId) => {
-      // Skip items marked for removal - they will be handled in the removal section
-      if (markedForRemovalNodeIds.has(nodeId)) {
+      // Check if this is an empty roles array (removal) - we need to process these even if marked for removal
+      const isEmptyRoles = !roles || roles.length === 0
+      
+      // Skip items marked for removal ONLY if they don't have empty roles
+      // Items with empty roles need to be processed to remove permissions
+      if (markedForRemovalNodeIds.has(nodeId) && !isEmptyRoles) {
         return
       }
       
       // Find the item that matches this nodeId
       // First try selectedItems
       let item = props.selectedItems.find(selectedItem => {
-        if (nodeId.startsWith('report_')) {
+        // Handle server-root specially
+        if (nodeId === 'server-root') {
+          return selectedItem.path === '/'
+        } else if (nodeId.startsWith('report_')) {
           const reportId = nodeId.replace('report_', '')
           return selectedItem.id === reportId
         } else if (nodeId.startsWith('folder_')) {
@@ -1495,6 +1554,17 @@ const handleApplyPermissions = async () => {
           if (report) {
             item = report
           }
+        }
+      }
+      
+      // If still not found and it's server-root with empty roles, construct it
+      // This handles the case where server-root has empty roles but might not be in selectedItems
+      if (!item && nodeId === 'server-root') {
+        item = {
+          type: 'Folder',
+          path: '/',
+          name: '/',
+          itemType: 'Folder'
         }
       }
       
@@ -1699,13 +1769,25 @@ const handleApplyPermissions = async () => {
             name: folderPath.split('/').pop(),
             itemType: 'Folder'
           }
+        } else if (nodeId === 'server-root') {
+          // Handle server-root - it represents the home page "/"
+          item = {
+            type: 'Folder',
+            path: '/',
+            name: '/',
+            itemType: 'Folder'
+          }
         }
       }
       
       // Only process if we found the item
       if (item) {
-        const originalRoles = originalMap.get(nodeId) || []
-        const hasOriginalPermissions = originalMap.has(nodeId)
+        // For server-root, check both 'server-root' and 'folder_/' in originalMap
+        const originalRoles = originalMap.get(nodeId) || 
+                              (nodeId === 'server-root' ? originalMap.get('folder_/') : []) || 
+                              []
+        const hasOriginalPermissions = originalMap.has(nodeId) || 
+                                     (nodeId === 'server-root' && originalMap.has('folder_/'))
         
         // Check if all roles are being removed (empty roles array)
         if (!roles || roles.length === 0) {
@@ -1798,22 +1880,25 @@ const handleApplyPermissions = async () => {
   // or where the comparison logic missed them
   if (props.selectedItems && props.selectedItems.length > 0 && props.itemRoles && props.itemRoles.size > 0) {
     props.selectedItems.forEach(selectedItem => {
-      // Skip if already processed
-      const nodeId = selectedItem.id ? `report_${selectedItem.id}` : `folder_${selectedItem.path}`
+      // Handle server-root specially - it uses 'server-root' as nodeId but path is '/'
+      const nodeId = selectedItem.path === '/' ? 'server-root' : (selectedItem.id ? `report_${selectedItem.id}` : `folder_${selectedItem.path}`)
       
       // Skip if already in itemsWithRoleChanges or marked for removal
       const alreadyProcessed = itemsWithRoleChanges.some(({ item }) => 
         (item.id && selectedItem.id && item.id === selectedItem.id) ||
         (item.path && selectedItem.path && item.path === selectedItem.path)
       )
-      if (alreadyProcessed || markedForRemovalNodeIds.has(nodeId)) {
+      if (alreadyProcessed || markedForRemovalNodeIds.has(nodeId) || (selectedItem.path === '/' && markedForRemovalNodeIds.has('folder_/'))) {
         return
       }
       
-      // Check if this item has role tags in itemRoles
-      if (props.itemRoles.has(nodeId)) {
-        const roles = props.itemRoles.get(nodeId)
-        const originalRoles = originalPermissionsMap.value.get(nodeId) || []
+      // Check if this item has role tags in itemRoles (handle server-root mapping)
+      const roles = props.itemRoles.get(nodeId) || (selectedItem.path === '/' ? props.itemRoles.get('server-root') : null)
+      if (roles) {
+        // Get original roles (check both nodeId and folder_/ for server-root)
+        const originalRoles = originalPermissionsMap.value.get(nodeId) || 
+                             (selectedItem.path === '/' ? originalPermissionsMap.value.get('folder_/') : []) || 
+                             []
         
         // Only add if roles are different and not empty
         if (roles && roles.length > 0) {

@@ -378,9 +378,12 @@ watch(() => props.reports, () => {
 // Clear itemRoles and permissionsMap when no items are selected
 // Also ensure all selected items have Browser role
 watch(() => checked.value, (newChecked) => {
-  // If no items are checked (except server-root), clear all itemRoles and permissionsMap
+  // Check if server-root is checked
+  const isServerRootChecked = newChecked.includes('server-root')
   const checkedItems = newChecked.filter(id => id !== 'server-root')
-  if (checkedItems.length === 0) {
+  
+  if (checkedItems.length === 0 && !isServerRootChecked) {
+    // No items checked at all
     itemRoles.value = new Map()
     // Also clear permissionsMap so no roles are displayed in the role access column
     permissionsMap.value = new Map()
@@ -388,6 +391,14 @@ watch(() => checked.value, (newChecked) => {
       props.onRoleChanges(new Map())
     }
   } else {
+    // Ensure server-root has at least Browser role if checked
+    if (isServerRootChecked && !itemRoles.value.has('server-root')) {
+      // Check if server-root has roles in permissionsMap (from checked permissions)
+      // Server-root represents the home page "/"
+      const serverRoles = permissionsMap.value.get('/') || ['Browser']
+      itemRoles.value.set('server-root', serverRoles)
+    }
+    
     // Ensure all checked items have at least Browser role in itemRoles
     checkedItems.forEach(nodeId => {
       if (!itemRoles.value.has(nodeId)) {
@@ -503,9 +514,18 @@ watch(() => props.permissionsData, (newPermissions) => {
     }
     
     if (permission.itemType === 'Folder') {
-      // Add folder ID
-      const folderId = `folder_${permission.path}`
-      newCheckedIds.push(folderId)
+      // Handle server root (path '/') specially - it uses 'server-root' as nodeId
+      if (normalizedPath === '/') {
+        newCheckedIds.push('server-root')
+        // Also store in permissionsMap with '/' key
+        if (roles.length > 0) {
+          newPermissionsMap.set('/', roles)
+        }
+      } else {
+        // Add folder ID for regular folders
+        const folderId = `folder_${permission.path}`
+        newCheckedIds.push(folderId)
+      }
     } else if (permission.itemType === 'Report') {
       // Try to find report by ID first (most reliable, especially for Persian characters)
       let report = null
@@ -605,6 +625,40 @@ watch(() => props.permissionsData, (newPermissions) => {
   checked.value = newCheckedIds
   // Store as original permissions (what user currently has)
   originalPermissions.value = [...newCheckedIds]
+  
+  // Also set itemRoles for checked items (especially server-root)
+  const newItemRoles = new Map()
+  newCheckedIds.forEach(nodeId => {
+    if (nodeId === 'server-root') {
+      // Get roles from permissionsMap using '/' key
+      const roles = newPermissionsMap.get('/') || []
+      if (roles.length > 0) {
+        newItemRoles.set('server-root', roles)
+      }
+    } else {
+      // For other items, get roles from permissionsMap
+      const node = findNodeById(nodeId)
+      if (node) {
+        const path = node.type === 'folder' 
+          ? node.path 
+          : node.path || node.fullPath || ''
+        const normalizePath = (p) => {
+          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+        }
+        const normalizedPath = normalizePath(path)
+        const roles = newPermissionsMap.get(normalizedPath) || []
+        if (roles.length > 0) {
+          newItemRoles.set(nodeId, roles)
+        }
+      }
+    }
+  })
+  itemRoles.value = newItemRoles
+  
+  // Notify parent of role changes
+  if (props.onRoleChanges) {
+    props.onRoleChanges(new Map(itemRoles.value))
+  }
 }, { deep: true })
 
 // Notify parent of selected items (excluding marked for removal)
@@ -615,14 +669,22 @@ watch([checked, markedForRemoval, originalPermissions, itemRoles], () => {
   // Items to keep/add (checked but not marked, excluding unchanged original permissions)
   const selectedItems = checked.value
     .filter(id => {
-      if (id === 'server-root') return false
       if (markedSet.has(id)) return false // Exclude marked
+      // Include server-root if it's checked (represents home page "/")
+      if (id === 'server-root') return true
       // Only include if it's NEW (not in original) or if we want to keep all checked
       // For optimization, we could filter out unchanged items here
       return true
     })
     .map(id => {
-      if (id.startsWith('report_')) {
+      // Handle server-root as home page "/"
+      if (id === 'server-root') {
+        return {
+          type: 'Folder',
+          path: '/',
+          name: '/'
+        }
+      } else if (id.startsWith('report_')) {
         const reportId = id.replace('report_', '')
         return props.reports.find(r => r.id === reportId)
       } else if (id.startsWith('folder_')) {
@@ -639,9 +701,15 @@ watch([checked, markedForRemoval, originalPermissions, itemRoles], () => {
 
   // Items marked for removal
   const markedItems = markedForRemoval.value
-    .filter(id => id !== 'server-root')
     .map(id => {
-      if (id.startsWith('report_')) {
+      // Handle server-root specially - it represents the home page "/"
+      if (id === 'server-root') {
+        return {
+          type: 'Folder',
+          path: '/',
+          name: '/'
+        }
+      } else if (id.startsWith('report_')) {
         const reportId = id.replace('report_', '')
         return props.reports.find(r => r.id === reportId)
       } else if (id.startsWith('folder_')) {
@@ -1139,30 +1207,35 @@ const handleAddRole = (nodeId, role) => {
   
   // If not in itemRoles, get from permissionsMap based on node path
   if (currentRoles === null || currentRoles === undefined) {
-    const node = findNodeById(nodeId)
-    if (node) {
-      const path = node.type === 'folder' 
-        ? node.path 
-        : node.path || node.fullPath || ''
-      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
-      const normalizePath = (p) => {
-        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
-      }
-      const normalizedPath = normalizePath(path)
-      // Try exact match first
-      currentRoles = permissionsMap.value.get(normalizedPath)
-      // If not found, try case-insensitive match (but preserve Unicode)
-      if (!currentRoles) {
-        for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
-          if (normalizePath(mapPath) === normalizedPath) {
-            currentRoles = mapRoles
-            break
+    // Handle server-root specially - it represents the home page "/"
+    if (nodeId === 'server-root') {
+      currentRoles = permissionsMap.value.get('/') || []
+    } else {
+      const node = findNodeById(nodeId)
+      if (node) {
+        const path = node.type === 'folder' 
+          ? node.path 
+          : node.path || node.fullPath || ''
+        // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+        const normalizePath = (p) => {
+          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+        }
+        const normalizedPath = normalizePath(path)
+        // Try exact match first
+        currentRoles = permissionsMap.value.get(normalizedPath)
+        // If not found, try case-insensitive match (but preserve Unicode)
+        if (!currentRoles) {
+          for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+            if (normalizePath(mapPath) === normalizedPath) {
+              currentRoles = mapRoles
+              break
+            }
           }
         }
+        currentRoles = currentRoles || []
+      } else {
+        currentRoles = []
       }
-      currentRoles = currentRoles || []
-    } else {
-      currentRoles = []
     }
   }
   
@@ -1173,7 +1246,8 @@ const handleAddRole = (nodeId, role) => {
   
   // Add role if not already present
   if (!currentRoles.includes(role)) {
-    itemRoles.value.set(nodeId, [...currentRoles, role])
+    const newRoles = [...currentRoles, role]
+    itemRoles.value.set(nodeId, newRoles)
     // If item was marked for removal, unmark it since we're adding a role back
     const markedSet = new Set(markedForRemoval.value)
     if (markedSet.has(nodeId)) {
@@ -1186,7 +1260,7 @@ const handleAddRole = (nodeId, role) => {
       checkedSet.add(nodeId)
       checked.value = Array.from(checkedSet)
     }
-    // Notify parent of role changes
+    // Notify parent of role changes immediately
     if (props.onRoleChanges) {
       props.onRoleChanges(new Map(itemRoles.value))
     }
@@ -1298,30 +1372,35 @@ const handleRemoveRole = (nodeId, role) => {
   
   // If not in itemRoles, get from permissionsMap based on node path
   if (currentRoles === null || currentRoles === undefined) {
-    const node = findNodeById(nodeId)
-    if (node) {
-      const path = node.type === 'folder' 
-        ? node.path 
-        : node.path || node.fullPath || ''
-      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
-      const normalizePath = (p) => {
-        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
-      }
-      const normalizedPath = normalizePath(path)
-      // Try exact match first
-      currentRoles = permissionsMap.value.get(normalizedPath)
-      // If not found, try case-insensitive match (but preserve Unicode)
-      if (!currentRoles) {
-        for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
-          if (normalizePath(mapPath) === normalizedPath) {
-            currentRoles = mapRoles
-            break
+    // Handle server-root specially - it represents the home page "/"
+    if (nodeId === 'server-root') {
+      currentRoles = permissionsMap.value.get('/') || []
+    } else {
+      const node = findNodeById(nodeId)
+      if (node) {
+        const path = node.type === 'folder' 
+          ? node.path 
+          : node.path || node.fullPath || ''
+        // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+        const normalizePath = (p) => {
+          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+        }
+        const normalizedPath = normalizePath(path)
+        // Try exact match first
+        currentRoles = permissionsMap.value.get(normalizedPath)
+        // If not found, try case-insensitive match (but preserve Unicode)
+        if (!currentRoles) {
+          for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+            if (normalizePath(mapPath) === normalizedPath) {
+              currentRoles = mapRoles
+              break
+            }
           }
         }
+        currentRoles = currentRoles || []
+      } else {
+        currentRoles = []
       }
-      currentRoles = currentRoles || []
-    } else {
-      currentRoles = []
     }
   }
   
