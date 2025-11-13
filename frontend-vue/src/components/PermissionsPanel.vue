@@ -7,169 +7,6 @@
       {{ t('setUserAccess') }}
     </h2>
 
-    <!-- User Input and Apply Button Row -->
-    <div class="form-section user-input-row">
-      <label>{{ t('userNameOrGroup') }}</label>
-      <div class="user-input-and-button">
-        <!-- Live Search Input -->
-        <div class="user-search-container">
-          <input
-            v-model="adSearchQuery"
-            type="text"
-            placeholder="Search users or groups from Active Directory..."
-            class="text-input user-search-input"
-            @input="searchAdUsers"
-            @focus="showSearchResults = true"
-          />
-          <button v-if="adSearchQuery" @click="clearAdSearch" class="clear-input-btn">×</button>
-          
-          <!-- Live Search Results -->
-          <div v-if="showSearchResults && (adLoading || adError || adUsers.length > 0 || adSearchQuery)" class="live-search-results">
-            <!-- Loading State -->
-            <div v-if="adLoading" class="search-result-item loading-item">
-              <span class="spinner-small"></span> Searching...
-            </div>
-            
-            <!-- Error State -->
-            <div v-if="adError && !adLoading" class="search-result-item error-item">
-              {{ adError }}
-            </div>
-            
-            <!-- User Results -->
-            <div v-if="!adLoading && !adError && adUsers.length > 0">
-              <div
-                v-for="user in adUsers"
-                :key="user.name"
-                class="search-result-item"
-                :class="{ selected: isAdUserSelected(user) }"
-                @click="selectAdUser(user)"
-              >
-                <!-- Status Icon for Users (active/inactive) -->
-                <span 
-                  v-if="user.type === 'User' && user.isActive !== undefined" 
-                  class="status-indicator"
-                  :class="{ active: user.isActive, inactive: !user.isActive }"
-                  :title="user.isActive ? 'Active' : 'Inactive'"
-                >
-                  <svg v-if="user.isActive" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </span>
-                
-                <!-- Status Icon for Groups (always active/green) -->
-                <span 
-                  v-if="user.type === 'Group'" 
-                  class="status-indicator active"
-                  title="Group"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </span>
-                
-                <!-- User Icon (Single Person - Blue) -->
-                <svg v-if="user.type === 'User'" width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="user-type-icon">
-                  <path d="M10 10C12.2091 10 14 8.20914 14 6C14 3.79086 12.2091 2 10 2C7.79086 2 6 3.79086 6 6C6 8.20914 7.79086 10 10 10Z" fill="currentColor"/>
-                  <path d="M4 18C4 14.6863 6.68629 12 10 12C13.3137 12 16 14.6863 16 18V18H4V18Z" fill="currentColor"/>
-                </svg>
-                
-                <!-- Group Icon (3 People - Orange) -->
-                <svg v-else width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="group-type-icon">
-                  <!-- Person 1 (Left) -->
-                  <circle cx="5.5" cy="5" r="2.5" fill="currentColor"/>
-                  <path d="M1 14C1 11.7909 2.79086 10 5 10C6.48 10 7.77 10.81 8.46 12" fill="currentColor"/>
-                  
-                  <!-- Person 2 (Center - Larger) -->
-                  <circle cx="10" cy="4.5" r="3" fill="currentColor"/>
-                  <path d="M5 16C5 13.2386 7.23858 11 10 11C12.7614 11 15 13.2386 15 16V17H5V16Z" fill="currentColor"/>
-                  
-                  <!-- Person 3 (Right) -->
-                  <circle cx="14.5" cy="5" r="2.5" fill="currentColor"/>
-                  <path d="M19 14C19 11.7909 17.2091 10 15 10C13.52 10 12.23 10.81 11.54 12" fill="currentColor"/>
-                </svg>
-                
-                <div class="user-result-info">
-                  <span class="user-result-display">{{ user.displayText }}</span>
-                </div>
-                
-                <!-- View Details Button (for users) -->
-                <button 
-                  v-if="user.type === 'User'" 
-                  @click.stop="showUserDetails(user.name)" 
-                  class="user-info-btn"
-                  title="View Details"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-                
-                <!-- View Group Members Button (for groups) -->
-                <button 
-                  v-if="user.type === 'Group'" 
-                  @click.stop="showGroupMembers(user.name)" 
-                  class="user-info-btn"
-                  title="View Group Members"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-                
-                <span v-if="isAdUserSelected(user)" class="check-icon">✓</span>
-              </div>
-            </div>
-            
-            <!-- Empty State -->
-            <div v-if="!adLoading && !adError && adUsers.length === 0 && adSearchQuery" class="search-result-item empty-item">
-              No users or groups found for "{{ adSearchQuery }}"
-            </div>
-          </div>
-        </div>
-        
-        <!-- Apply Button -->
-        <button
-          class="apply-btn-minimal"
-          @click="handleApplyPermissions"
-          :disabled="loading || (selectedItems.length === 0 && props.markedForRemovalItems.length === 0) || selectedAdUsers.length === 0 || !hasActualChanges"
-        >
-          <span v-if="loading" class="spinner-small"></span>
-          <span v-else>{{ t('applyPermissions') }}</span>
-        </button>
-        
-        <!-- Check Permission Button -->
-        <button
-          class="check-btn-minimal"
-          @click="handleCheckPermissions"
-          :disabled="checkLoading || selectedAdUsers.length === 0"
-        >
-          <span v-if="checkLoading" class="spinner-small"></span>
-          <span v-else>{{ t('checkPermissions') }}</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Selected Users Tags - Below the input row -->
-    <div v-if="selectedAdUsers.length > 0" class="selected-users-section">
-      <div class="selected-users-tags">
-        <span v-for="user in selectedAdUsers" :key="user.name" class="user-tag">
-          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M10 10C12.2091 10 14 8.20914 14 6C14 3.79086 12.2091 2 10 2C7.79086 2 6 3.79086 6 6C6 8.20914 7.79086 10 10 10Z" fill="currentColor"/>
-            <path d="M4 18C4 14.6863 6.68629 12 10 12C13.3137 12 16 14.6863 16 18V18H4V18Z" fill="currentColor"/>
-          </svg>
-          {{ user.name }}
-          <button @click="removeAdUser(user)" class="user-tag-remove">×</button>
-        </span>
-        
-      </div>
-    </div>
-
-    <div class="divider"></div>
 
     <!-- Roles Section -->
     <div class="form-section role-input-row">
@@ -586,6 +423,10 @@ const props = defineProps({
   onItemsSelected: {
     type: Function,
     default: () => {}
+  },
+  selectedAdUsers: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -604,7 +445,7 @@ watch(() => props.newItems, (newItems) => {
 
 // Also watch selectedItems to auto-select Browser when new items are first selected
 // Watch button disabled state for debugging
-watch([() => hasActualChanges.value, () => props.selectedItems.length, () => selectedAdUsers.value.length, () => loading.value], 
+watch([() => hasActualChanges.value, () => props.selectedItems.length, () => props.selectedAdUsers.length, () => loading.value], 
   ([hasChanges, itemsCount, usersCount, isLoading]) => {
     const isDisabled = isLoading || itemsCount === 0 || usersCount === 0 || !hasChanges
     console.log('🔘 [Apply Button State]', {
@@ -641,15 +482,6 @@ watch(() => props.selectedItems, (selectedItems) => {
 const loading = ref(false)
 const checkLoading = ref(false)
 const dropdownOpen = ref(false)
-
-// AD User Selection
-const selectedAdUsers = ref([])
-const adUsers = ref([])
-const adSearchQuery = ref('')
-const adLoading = ref(false)
-const adError = ref('')
-const showSearchResults = ref(false)
-let searchTimeout = null
 
 // Permissions Count by Role
 const permissionsCountByRole = ref({})
@@ -1227,95 +1059,6 @@ const clearAllRoles = () => {
   dropdownOpen.value = false
 }
 
-// AD User Selection Functions
-const searchAdUsers = async () => {
-  // Clear previous timeout
-  if (searchTimeout) {
-    clearTimeout(searchTimeout)
-  }
-
-  const query = adSearchQuery.value.trim()
-  
-  if (query.length < 1) {
-    adUsers.value = []
-    return
-  }
-
-  // Debounce search - faster response
-  searchTimeout = setTimeout(async () => {
-    adLoading.value = true
-    adError.value = ''
-
-    try {
-      const adConfig = props.connectionInfo?.adConfig
-      
-      if (!adConfig) {
-        adError.value = 'Active Directory configuration is missing. Please check your backend .env file for LDAP settings, or reload the page.'
-        adLoading.value = false
-        console.warn('AD Config missing:', props.connectionInfo)
-        return
-      }
-
-      const response = await axios.post('/api/ad/search', {
-        ldapUrl: adConfig.ldapUrl,
-        bindDN: adConfig.bindDN,
-        bindPassword: adConfig.bindPassword,
-        searchBase: adConfig.searchBase,
-        searchFilter: query
-      })
-
-      if (response.data.success) {
-        adUsers.value = response.data.results || []
-        if (adUsers.value.length === 0) {
-          adError.value = 'No users or groups found'
-        }
-      } else {
-        adError.value = response.data.error || 'Failed to search users'
-      }
-    } catch (error) {
-      console.error('Error searching AD:', error)
-      const errorMsg = error.response?.data?.message || error.message || 'Failed to search Active Directory'
-      // Handle size limit exceeded more gracefully
-      if (errorMsg.includes('Size Limit Exceeded') || errorMsg.includes('SizeLimitExceeded')) {
-        adError.value = 'Too many results. Please be more specific in your search.'
-      } else {
-        adError.value = errorMsg
-      }
-    } finally {
-      adLoading.value = false
-    }
-  }, 300) // 300ms debounce - faster response
-}
-
-const clearAdSearch = () => {
-  adSearchQuery.value = ''
-  adUsers.value = []
-  adError.value = ''
-  showSearchResults.value = false
-}
-
-const selectAdUser = (user) => {
-  const index = selectedAdUsers.value.findIndex(u => u.name === user.name)
-  if (index > -1) {
-    // Already selected, remove it
-    selectedAdUsers.value.splice(index, 1)
-  } else {
-    // Not selected, add it
-    selectedAdUsers.value.push(user)
-  }
-  // Don't close results, let user continue selecting
-}
-
-const removeAdUser = (user) => {
-  const index = selectedAdUsers.value.findIndex(u => u.name === user.name)
-  if (index > -1) {
-    selectedAdUsers.value.splice(index, 1)
-  }
-}
-
-const isAdUserSelected = (user) => {
-  return selectedAdUsers.value.some(u => u.name === user.name)
-}
 
 // Computed: Filter group members
 const filteredGroupMembers = computed(() => {
@@ -1472,6 +1215,14 @@ const closeGroupMembersModal = () => {
 }
 
 const handleApplyPermissions = async () => {
+  // Validate: must have server connection
+  if (!props.connectionInfo?.serverUri) {
+    if (props.onError) {
+      props.onError('Server connection is required. Please select a server first.')
+    }
+    return
+  }
+  
   // Validate: must have actual changes
   if (!hasActualChanges.value) {
     if (props.onError) {
@@ -1482,13 +1233,13 @@ const handleApplyPermissions = async () => {
 
   // Get user names from AD selection
   let userNames = []
-  if (selectedAdUsers.value.length === 0) {
+  if (props.selectedAdUsers.length === 0) {
     if (props.onError) {
       props.onError('Please select at least one user from Active Directory')
     }
     return
   }
-  userNames = selectedAdUsers.value.map(u => u.name)
+  userNames = props.selectedAdUsers.map(u => u.name)
 
   // If there are role changes in the table, we can proceed without selectedRoles
   // Otherwise, we need selectedRoles
@@ -2251,7 +2002,7 @@ const handleApplyPermissions = async () => {
       // AUTO-REFRESH: Re-check permissions after successful changes
       // This updates the "original permissions" state so next operation works correctly
       // Only auto-refresh if exactly one user is selected (check permissions requires single user)
-      if (selectedAdUsers.value.length === 1) {
+      if (props.selectedAdUsers.length === 1) {
         setTimeout(async () => {
           await handleCheckPermissions()
         }, 1000) // Wait 1 second for server to propagate changes
@@ -2346,15 +2097,23 @@ const handleApplyPermissions = async () => {
 }
 
 const handleCheckPermissions = async () => {
+  // Validate: must have server connection
+  if (!props.connectionInfo?.serverUri) {
+    if (props.onError) {
+      props.onError('Server connection is required. Please select a server first.')
+    }
+    return
+  }
+  
   // Validate at least one user is selected
-  if (selectedAdUsers.value.length === 0) {
+  if (props.selectedAdUsers.length === 0) {
     if (props.onError) {
       props.onError('Please select at least one user to check permissions')
     }
     return
   }
 
-  const userNames = selectedAdUsers.value.map(u => u.name)
+  const userNames = props.selectedAdUsers.map(u => u.name)
   checkLoading.value = true
 
   try {
@@ -2443,11 +2202,14 @@ if (typeof window !== 'undefined') {
     if (!target.closest('.multi-select')) {
       dropdownOpen.value = false
     }
-    if (!target.closest('.user-search-container')) {
-      showSearchResults.value = false
-    }
   })
 }
+
+// Expose methods for parent component to call
+defineExpose({
+  handleApplyPermissions,
+  handleCheckPermissions
+})
 </script>
 
 <style scoped>
