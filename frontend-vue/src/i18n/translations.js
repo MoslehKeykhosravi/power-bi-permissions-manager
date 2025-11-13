@@ -31,6 +31,8 @@ export const translations = {
     noMatch: 'No folders or reports match your search',
     noReports: 'No reports available',
     total: 'Total',
+    objectName: 'Object Name',
+    roleAccess: 'Role Access',
     
     // Permissions Panel
     setUserAccess: 'Set User Access',
@@ -137,6 +139,8 @@ export const translations = {
     noMatch: 'هیچ پوشه یا گزارشی با جستجوی شما مطابقت ندارد',
     noReports: 'هیچ گزارشی در دسترس نیست',
     total: 'مجموع',
+    objectName: 'نام شیء',
+    roleAccess: 'دسترسی نقش',
     
     // Permissions Panel
     setUserAccess: 'تنظیم دسترسی کاربر',

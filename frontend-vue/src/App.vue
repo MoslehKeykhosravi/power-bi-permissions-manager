@@ -694,7 +694,7 @@ onMounted(() => {
 
 .content-grid {
   display: grid;
-  grid-template-columns: 50% 50%;
+  grid-template-columns: 60% 40%;
   gap: 1.5rem;
   flex: 1;
   min-height: 0;

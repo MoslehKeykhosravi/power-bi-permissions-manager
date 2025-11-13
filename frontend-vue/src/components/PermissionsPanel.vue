@@ -7,10 +7,10 @@
       {{ t('setUserAccess') }}
     </h2>
 
-    <!-- User Input and Apply Button Row -->
+    <!-- User Input Row -->
     <div class="form-section user-input-row">
       <label>{{ t('userNameOrGroup') }}</label>
-      <div class="user-input-and-button">
+      <div class="user-input-container">
         <!-- Live Search Input -->
         <div class="user-search-container">
           <input
@@ -131,7 +131,13 @@
             </div>
           </div>
         </div>
-        
+      </div>
+    </div>
+
+    <!-- Apply and Check Permission Buttons Row -->
+    <div class="form-section buttons-row">
+      <label></label>
+      <div class="buttons-container">
         <!-- Apply Button -->
         <button
           class="apply-btn-minimal"
@@ -169,51 +175,6 @@
       </div>
     </div>
 
-    <div class="divider"></div>
-
-    <!-- Roles Section -->
-    <div class="form-section role-input-row">
-      <label>{{ t('accessLevel') }}</label>
-      <div class="role-input-wrapper">
-        <!-- Multi-select Dropdown -->
-        <div class="multi-select" :class="{ open: dropdownOpen }" @click="toggleDropdown">
-          <div class="selected-items">
-            <span v-if="selectedRoles.length === 0" class="placeholder">{{ t('selectRoles') }}</span>
-            <div v-else class="chips">
-              <span v-for="role in selectedRoles" :key="role" class="chip">
-                <svg width="12" height="12" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M10 2C8.34315 2 7 3.34315 7 5V8H6C5.44772 8 5 8.44772 5 9V17C5 17.5523 5.44772 18 6 18H14C14.5523 18 15 17.5523 15 17V9C15 8.44772 14.5523 8 14 8H13V5C13 3.34315 11.6569 2 10 2ZM11 8V5C11 4.44772 10.5523 4 10 4C9.44772 4 9 4.44772 9 5V8H11Z" fill="currentColor"/>
-                </svg>
-                {{ t('role' + role.replace(/\s+/g, '')) }}
-                <button @click.stop="removeRole(role)" class="chip-remove">×</button>
-              </span>
-            </div>
-            <svg class="dropdown-arrow" :class="{ rotated: dropdownOpen }" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          
-          <div v-if="dropdownOpen" class="dropdown-menu">
-            <div class="dropdown-item select-all" @click.stop="toggleSelectAll">
-              <input type="checkbox" :checked="isAllSelected" @click.stop="toggleSelectAll" />
-              <span><strong>{{ t('selectAll') }}</strong></span>
-            </div>
-            <div class="dropdown-divider"></div>
-            <div
-              v-for="role in availableRoles"
-              :key="role"
-              class="dropdown-item"
-              @click.stop="toggleRole(role)"
-            >
-              <input type="checkbox" :checked="selectedRoles.includes(role)" @click.stop="toggleRole(role)" />
-              <span>{{ t('role' + role.replace(/\s+/g, '')) }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="divider"></div>
 
     <!-- Selected Items Summary -->
     <div class="form-section selected-items-section">
@@ -590,19 +551,7 @@ const props = defineProps({
 })
 
 const userName = ref('')
-const selectedRoles = ref(['Browser'])
 
-// Watch for new items and automatically select Browser role if not already selected
-watch(() => props.newItems, (newItems) => {
-  if (newItems && newItems.length > 0) {
-    // If new items are selected and no roles are selected, automatically select Browser
-    if (selectedRoles.value.length === 0) {
-      selectedRoles.value = ['Browser']
-    }
-  }
-}, { deep: true })
-
-// Also watch selectedItems to auto-select Browser when new items are first selected
 // Watch button disabled state for debugging
 watch([() => hasActualChanges.value, () => props.selectedItems.length, () => selectedAdUsers.value.length, () => loading.value], 
   ([hasChanges, itemsCount, usersCount, isLoading]) => {
@@ -623,21 +572,8 @@ watch([() => hasActualChanges.value, () => props.selectedItems.length, () => sel
   { immediate: true }
 )
 
-watch(() => props.selectedItems, (selectedItems) => {
-  // Check if there are any new items (not in original permissions)
-  const hasNewItems = selectedItems.some(item => {
-    const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-    return !props.originalPermissionIds.includes(nodeId)
-  })
-  
-  if (hasNewItems && selectedRoles.value.length === 0) {
-    // If new items are selected and no roles are selected, automatically select Browser
-    selectedRoles.value = ['Browser']
-  }
-}, { deep: true })
 const loading = ref(false)
 const checkLoading = ref(false)
-const dropdownOpen = ref(false)
 
 // AD User Selection
 const selectedAdUsers = ref([])
@@ -801,10 +737,6 @@ const getRoleText = (role) => {
   const roleKey = 'role' + role.replace(/\s+/g, '')
   return t(roleKey)
 }
-
-const isAllSelected = computed(() => {
-  return selectedRoles.value.length === availableRoles.length
-})
 
 // Check if there are role changes in the table
 const hasRoleChanges = computed(() => {
@@ -1140,43 +1072,6 @@ const closeModal = () => {
   modalType.value = ''
 }
 
-const toggleDropdown = () => {
-  dropdownOpen.value = !dropdownOpen.value
-}
-
-const toggleRole = (role) => {
-  const index = selectedRoles.value.indexOf(role)
-  if (index > -1) {
-    selectedRoles.value.splice(index, 1)
-  } else {
-    selectedRoles.value.push(role)
-  }
-}
-
-const removeRole = (role) => {
-  const index = selectedRoles.value.indexOf(role)
-  if (index > -1) {
-    selectedRoles.value.splice(index, 1)
-  }
-}
-
-const toggleSelectAll = () => {
-  if (isAllSelected.value) {
-    selectedRoles.value = []
-  } else {
-    selectedRoles.value = [...availableRoles]
-  }
-}
-
-const selectAllRoles = () => {
-  selectedRoles.value = [...availableRoles]
-  dropdownOpen.value = false
-}
-
-const clearAllRoles = () => {
-  selectedRoles.value = []
-  dropdownOpen.value = false
-}
 
 // AD User Selection Functions
 const searchAdUsers = async () => {
@@ -1441,13 +1336,19 @@ const handleApplyPermissions = async () => {
   }
   userNames = selectedAdUsers.value.map(u => u.name)
 
-  // If there are role changes in the table, we can proceed without selectedRoles
-  // Otherwise, we need selectedRoles
-  if (!hasActualRoleChanges.value && selectedRoles.value.length === 0 && props.newItems.length > 0) {
-    if (props.onError) {
-      props.onError(t('selectAtLeastOneRole'))
+  // Check if new items have roles assigned in itemRoles
+  if (props.newItems.length > 0) {
+    const hasRolesForNewItems = props.newItems.some(item => {
+      const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
+      return props.itemRoles && props.itemRoles.has(nodeId) && props.itemRoles.get(nodeId).length > 0
+    })
+    
+    if (!hasRolesForNewItems && !hasActualRoleChanges.value) {
+      if (props.onError) {
+        props.onError('Please assign roles to items using the role tags in the table before applying permissions.')
+      }
+      return
     }
-    return
   }
 
   // Get items with role changes (items that are in originalPermissions but have actual role changes)
@@ -2073,22 +1974,15 @@ const handleApplyPermissions = async () => {
           try {
             const itemType = item.type === 'Folder' ? 'Folder' : 'Report'
             
-            // Get roles for this item from itemRoles, or use selectedRoles, or default to Browser
-            let rolesToApply = selectedRoles.value
-            if (props.itemRoles && props.itemRoles.size > 0) {
-              // Find nodeId for this item
-              const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-              if (props.itemRoles.has(nodeId)) {
-                const itemRolesList = props.itemRoles.get(nodeId)
-                // If itemRoles has roles, use them; otherwise use selectedRoles or Browser
-                rolesToApply = itemRolesList && itemRolesList.length > 0 ? itemRolesList : (selectedRoles.value.length > 0 ? selectedRoles.value : ['Browser'])
-              } else {
-                // If not in itemRoles, use selectedRoles or default to Browser
-                rolesToApply = selectedRoles.value.length > 0 ? selectedRoles.value : ['Browser']
+            // Get roles for this item from itemRoles only
+            const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
+            let rolesToApply = ['Browser'] // Default to Browser if no roles assigned
+            
+            if (props.itemRoles && props.itemRoles.has(nodeId)) {
+              const itemRolesList = props.itemRoles.get(nodeId)
+              if (itemRolesList && itemRolesList.length > 0) {
+                rolesToApply = itemRolesList
               }
-            } else {
-              // If no itemRoles, use selectedRoles or default to Browser
-              rolesToApply = selectedRoles.value.length > 0 ? selectedRoles.value : ['Browser']
             }
 
             const response = await axios.post('/api/permissions/set', {
@@ -2208,12 +2102,13 @@ const handleApplyPermissions = async () => {
             const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
             const key = item.id || `${item.type}_${item.path || item.fullPath || ''}`
             
-            // Get roles from itemRoles or selectedRoles
-            let roles = ['Browser']
+            // Get roles from itemRoles only
+            let roles = ['Browser'] // Default to Browser if no roles assigned
             if (props.itemRoles && props.itemRoles.has(nodeId)) {
-              roles = props.itemRoles.get(nodeId)
-            } else if (selectedRoles.value.length > 0) {
-              roles = selectedRoles.value
+              const itemRolesList = props.itemRoles.get(nodeId)
+              if (itemRolesList && itemRolesList.length > 0) {
+                roles = itemRolesList
+              }
             }
             
             // Create or update permission entry
@@ -2355,9 +2250,6 @@ const handleCheckPermissions = async () => {
 if (typeof window !== 'undefined') {
   window.addEventListener('click', (e) => {
     const target = e.target
-    if (!target.closest('.multi-select')) {
-      dropdownOpen.value = false
-    }
     if (!target.closest('.user-search-container')) {
       showSearchResults.value = false
     }
@@ -2423,7 +2315,7 @@ if (typeof window !== 'undefined') {
   min-height: 0;
 }
 
-.user-input-and-button {
+.user-input-container {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -2432,22 +2324,24 @@ if (typeof window !== 'undefined') {
   padding-right: 1.5rem;
 }
 
-.user-input-and-button .user-search-container {
+.user-input-container .user-search-container {
   flex: 1 1 auto;
   max-width: 100%;
 }
 
-/* Role Input Wrapper - Match user input layout */
-.role-input-wrapper {
+/* Buttons Row */
+.buttons-row {
+  margin-bottom: 1rem;
+  gap: 0.25rem;
+}
+
+.buttons-container {
   display: flex;
+  align-items: center;
+  gap: 0.5rem;
   flex: 1;
   min-width: 0;
   padding-right: 1.5rem;
-}
-
-.role-input-wrapper .multi-select {
-  flex: 1;
-  min-width: 0;
 }
 
 .text-input {
@@ -2495,214 +2389,6 @@ if (typeof window !== 'undefined') {
   background: #555;
 }
 
-.multi-select {
-  position: relative;
-  cursor: pointer;
-  user-select: none;
-}
-
-.selected-items {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  background: white;
-  min-height: 40px;
-  max-height: 40px;
-  box-sizing: border-box;
-  transition: all 0.2s ease;
-  overflow: hidden;
-}
-
-.selected-items:hover {
-  border-color: #999;
-}
-
-.dark-mode .selected-items {
-  background: #2c2c2c;
-  border-color: #555;
-  color: white;
-}
-
-.dark-mode .selected-items:hover {
-  border-color: #777;
-}
-
-.multi-select.open .selected-items {
-  border-color: #2196f3;
-  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
-}
-
-.dark-mode .multi-select.open .selected-items {
-  border-color: #64b5f6;
-  box-shadow: 0 0 0 3px rgba(100, 181, 246, 0.1);
-}
-
-.placeholder {
-  color: #999;
-  flex: 1;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.5rem;
-  flex: 1;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.chips::-webkit-scrollbar {
-  display: none;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 4px 10px;
-  background: linear-gradient(135deg, #757575 0%, #616161 100%);
-  color: white;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
-}
-
-.chip svg {
-  flex-shrink: 0;
-  opacity: 0.9;
-}
-
-.chip:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(117, 117, 117, 0.3);
-}
-
-.chip-remove {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-  border-radius: 50%;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s ease;
-}
-
-.chip-remove:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.dark-mode .chip {
-  background: linear-gradient(135deg, #616161 0%, #424242 100%);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.dropdown-arrow {
-  margin-left: 0.5rem;
-  flex-shrink: 0;
-  color: #666;
-  transition: transform 0.2s ease;
-}
-
-.dropdown-arrow.rotated {
-  transform: rotate(180deg);
-}
-
-.dark-mode .dropdown-arrow {
-  color: #999;
-}
-
-.dropdown-menu {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 8px;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  z-index: 1000;
-  max-height: 280px;
-  overflow-y: auto;
-  animation: slideDown 0.2s ease;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.dark-mode .dropdown-menu {
-  background: #2c2c2c;
-  border-color: #444;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
-.dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 0.95rem;
-}
-
-.dropdown-item:hover {
-  background: linear-gradient(90deg, #f5f8ff 0%, #f0f4ff 100%);
-}
-
-.dark-mode .dropdown-item:hover {
-  background: linear-gradient(90deg, #2a3540 0%, #2d3844 100%);
-}
-
-.dropdown-item.select-all {
-  font-weight: 600;
-  color: #2196f3;
-  background: #f5f8ff;
-}
-
-.dark-mode .dropdown-item.select-all {
-  color: #64b5f6;
-  background: #1a2332;
-}
-
-.dropdown-divider {
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, #e0e0e0 50%, transparent 100%);
-  margin: 4px 0;
-}
-
-.dark-mode .dropdown-divider {
-  background: linear-gradient(90deg, transparent 0%, #444 50%, transparent 100%);
-}
-
-.dropdown-item input[type="checkbox"] {
-  cursor: pointer;
-  width: 18px;
-  height: 18px;
-  accent-color: #2196f3;
-}
 
 .selected-info {
   color: #666;
@@ -2757,7 +2443,7 @@ if (typeof window !== 'undefined') {
 }
 
 .selected-items-section {
-  flex: 1;
+  width: 70%;
   min-height: 300px;
   display: flex;
   align-items: flex-start;
