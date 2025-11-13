@@ -1180,6 +1180,12 @@ const handleAddRole = (nodeId, role) => {
       markedSet.delete(nodeId)
       markedForRemoval.value = Array.from(markedSet)
     }
+    // Automatically select the object when a role is added
+    const checkedSet = new Set(checked.value)
+    if (!checkedSet.has(nodeId)) {
+      checkedSet.add(nodeId)
+      checked.value = Array.from(checkedSet)
+    }
     // Notify parent of role changes
     if (props.onRoleChanges) {
       props.onRoleChanges(new Map(itemRoles.value))
@@ -1244,6 +1250,12 @@ const handleAddAllRoles = (nodeId, rolesToAdd) => {
   if (markedSet.has(nodeId)) {
     markedSet.delete(nodeId)
     markedForRemoval.value = Array.from(markedSet)
+  }
+  // Automatically select the object when roles are added
+  const checkedSet = new Set(checked.value)
+  if (!checkedSet.has(nodeId)) {
+    checkedSet.add(nodeId)
+    checked.value = Array.from(checkedSet)
   }
   // Notify parent of role changes
   if (props.onRoleChanges) {
@@ -1642,15 +1654,16 @@ const handleToggleRolePicker = (nodeId) => {
 .report-table th {
   padding: 12px 16px;
   text-align: left;
-  font-weight: 600;
+  font-weight: 400;
   font-size: 0.875rem;
-  color: #344054;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-family: sans-serif;
+  color: #6b7280;
+  text-transform: capitalize;
+  letter-spacing: 0;
 }
 
 .dark-mode .report-table th {
-  color: #f9fafb;
+  color: #9ca3af;
 }
 
 .object-name-header {

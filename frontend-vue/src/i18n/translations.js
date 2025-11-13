@@ -53,6 +53,8 @@ export const translations = {
     clearAll: 'Clear All',
     permissionsBreakdown: 'Permissions Breakdown',
     totalObjects: 'Total Objects',
+    objectName: 'Object Name',
+    roleAccess: 'Role Access',
     
     // AD Enhanced Features
     viewDetails: 'View Details',
@@ -159,6 +161,8 @@ export const translations = {
     clearAll: 'پاک کردن همه',
     permissionsBreakdown: 'جزئیات مجوزها',
     totalObjects: 'مجموع اشیاء',
+    objectName: 'نام شیء',
+    roleAccess: 'دسترسی نقش',
     
     // AD Enhanced Features
     viewDetails: 'مشاهده جزئیات',
