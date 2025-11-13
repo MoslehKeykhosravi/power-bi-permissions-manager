@@ -144,6 +144,7 @@
               @save-editing="saveEditing"
               @cancel-editing="cancelEditing"
               @add-role="handleAddRole"
+              @add-all-roles="handleAddAllRoles"
               @remove-role="handleRemoveRole"
               @toggle-role-picker="handleToggleRolePicker"
             />
@@ -397,8 +398,23 @@ watch(() => checked.value, (newChecked) => {
           const path = node.type === 'folder' 
             ? node.path 
             : node.path || node.fullPath || ''
-          const normalizedPath = path.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
-          roles = permissionsMap.value.get(normalizedPath) || ['Browser']
+          // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+          const normalizePath = (p) => {
+            return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+          }
+          const normalizedPath = normalizePath(path)
+          // Try exact match first
+          roles = permissionsMap.value.get(normalizedPath)
+          // If not found, try case-insensitive match (but preserve Unicode)
+          if (!roles) {
+            for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+              if (normalizePath(mapPath) === normalizedPath) {
+                roles = mapRoles
+                break
+              }
+            }
+          }
+          roles = roles || ['Browser']
         } else {
           roles = ['Browser']
         }
@@ -461,7 +477,11 @@ watch(() => props.permissionsData, (newPermissions) => {
   
   newPermissions.forEach(permission => {
     const path = permission.path || permission.fullPath || ''
-    const normalizedPath = path.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
+    // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+    const normalizePath = (p) => {
+      return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+    }
+    const normalizedPath = normalizePath(path)
     const roles = permission.roles || []
     
     if (roles.length > 0) {
@@ -473,15 +493,70 @@ watch(() => props.permissionsData, (newPermissions) => {
       const folderId = `folder_${permission.path}`
       newCheckedIds.push(folderId)
     } else if (permission.itemType === 'Report') {
-      // Find the report by path and get its ID
-      const report = props.reports.find(r => {
-        const reportPath = r.path || r.fullPath || ''
-        const normalizedReportPath = reportPath.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
-        return normalizedReportPath === normalizedPath
-      })
+      // Try to find report by ID first (more reliable, especially for Persian characters)
+      let report = null
+      if (permission.id) {
+        report = props.reports.find(r => r.id === permission.id)
+        if (report) {
+          console.log(`✓ Matched report by ID: ${permission.id} -> ${report.name}`)
+        }
+      }
+      
+      // If not found by ID, try to find by path (with better Unicode handling)
+      if (!report) {
+        // Normalize paths: handle Unicode properly, don't use toLowerCase on Persian chars
+        const normalizePath = (p) => {
+          if (!p) return ''
+          // Decode URL encoding if present
+          try {
+            p = decodeURIComponent(p)
+          } catch (e) {
+            // If decoding fails, use original
+          }
+          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+        }
+        const normalizedPermissionPath = normalizePath(path)
+        
+        report = props.reports.find(r => {
+          const reportPath = r.path || r.fullPath || ''
+          const normalizedReportPath = normalizePath(reportPath)
+          
+          // Try exact match
+          if (normalizedReportPath === normalizedPermissionPath) {
+            return true
+          }
+          
+          // Try matching by full path (path + name)
+          const reportFullPath = r.fullPath || (r.path === '/' ? `/${r.name}` : `${r.path}/${r.name}`)
+          const normalizedFullPath = normalizePath(reportFullPath)
+          if (normalizedFullPath === normalizedPermissionPath) {
+            return true
+          }
+          
+          // Try matching just the name
+          if (r.name && normalizePath(r.name) === normalizePath(path.split('/').pop())) {
+            return true
+          }
+          
+          return false
+        })
+        
+        if (report) {
+          console.log(`✓ Matched report by path: "${path}" -> "${report.name}" (ID: ${report.id})`)
+        }
+      }
+      
       if (report) {
         const reportId = `report_${report.id}`
         newCheckedIds.push(reportId)
+      } else {
+        console.warn(`⚠ Could not find report for permission:`, {
+          path: path,
+          id: permission.id || 'N/A',
+          type: permission.type || permission.catalogType || 'N/A',
+          name: permission.name || 'N/A',
+          availableReports: props.reports.map(r => ({ id: r.id, name: r.name, path: r.path, fullPath: r.fullPath }))
+        })
       }
     }
   })
@@ -653,8 +728,23 @@ const handleCheck = ({ nodeId, node, isChecked, isMarkedForRemoval }) => {
           const path = node.type === 'folder' 
             ? node.path 
             : node.path || node.fullPath || ''
-          const normalizedPath = path.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
-          existingRoles = permissionsMap.value.get(normalizedPath) || ['Browser']
+          // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+          const normalizePath = (p) => {
+            return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+          }
+          const normalizedPath = normalizePath(path)
+          // Try exact match first
+          existingRoles = permissionsMap.value.get(normalizedPath)
+          // If not found, try case-insensitive match (but preserve Unicode)
+          if (!existingRoles) {
+            for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+              if (normalizePath(mapPath) === normalizedPath) {
+                existingRoles = mapRoles
+                break
+              }
+            }
+          }
+          existingRoles = existingRoles || ['Browser']
         } else {
           existingRoles = ['Browser']
         }
@@ -710,8 +800,23 @@ const handleCheck = ({ nodeId, node, isChecked, isMarkedForRemoval }) => {
           const path = node.type === 'folder' 
             ? node.path 
             : node.path || node.fullPath || ''
-          const normalizedPath = path.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
-          existingRoles = permissionsMap.value.get(normalizedPath) || ['Browser']
+          // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+          const normalizePath = (p) => {
+            return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+          }
+          const normalizedPath = normalizePath(path)
+          // Try exact match first
+          existingRoles = permissionsMap.value.get(normalizedPath)
+          // If not found, try case-insensitive match (but preserve Unicode)
+          if (!existingRoles) {
+            for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+              if (normalizePath(mapPath) === normalizedPath) {
+                existingRoles = mapRoles
+                break
+              }
+            }
+          }
+          existingRoles = existingRoles || ['Browser']
         } else {
           existingRoles = ['Browser']
         }
@@ -992,8 +1097,23 @@ const handleAddRole = (nodeId, role) => {
       const path = node.type === 'folder' 
         ? node.path 
         : node.path || node.fullPath || ''
-      const normalizedPath = path.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
-      currentRoles = permissionsMap.value.get(normalizedPath) || []
+      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+      const normalizePath = (p) => {
+        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+      }
+      const normalizedPath = normalizePath(path)
+      // Try exact match first
+      currentRoles = permissionsMap.value.get(normalizedPath)
+      // If not found, try case-insensitive match (but preserve Unicode)
+      if (!currentRoles) {
+        for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+          if (normalizePath(mapPath) === normalizedPath) {
+            currentRoles = mapRoles
+            break
+          }
+        }
+      }
+      currentRoles = currentRoles || []
     } else {
       currentRoles = []
     }
@@ -1006,6 +1126,55 @@ const handleAddRole = (nodeId, role) => {
     if (props.onRoleChanges) {
       props.onRoleChanges(new Map(itemRoles.value))
     }
+  }
+  rolePickerOpen.value = null
+}
+
+const handleAddAllRoles = (nodeId, rolesToAdd) => {
+  // Get current roles from itemRoles (user edits) or permissionsMap (original)
+  let currentRoles = itemRoles.value.get(nodeId)
+  
+  // If not in itemRoles, get from permissionsMap based on node path
+  if (!currentRoles) {
+    const node = findNodeById(nodeId)
+    if (node) {
+      const path = node.type === 'folder' 
+        ? node.path 
+        : node.path || node.fullPath || ''
+      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+      const normalizePath = (p) => {
+        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+      }
+      const normalizedPath = normalizePath(path)
+      // Try exact match first
+      currentRoles = permissionsMap.value.get(normalizedPath)
+      // If not found, try case-insensitive match (but preserve Unicode)
+      if (!currentRoles) {
+        for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+          if (normalizePath(mapPath) === normalizedPath) {
+            currentRoles = mapRoles
+            break
+          }
+        }
+      }
+      currentRoles = currentRoles || []
+    } else {
+      currentRoles = []
+    }
+  }
+  
+  // Add all roles that are not already present
+  const newRoles = [...currentRoles]
+  rolesToAdd.forEach(role => {
+    if (!newRoles.includes(role)) {
+      newRoles.push(role)
+    }
+  })
+  
+  itemRoles.value.set(nodeId, newRoles)
+  // Notify parent of role changes
+  if (props.onRoleChanges) {
+    props.onRoleChanges(new Map(itemRoles.value))
   }
   rolePickerOpen.value = null
 }
@@ -1045,8 +1214,23 @@ const handleRemoveRole = (nodeId, role) => {
       const path = node.type === 'folder' 
         ? node.path 
         : node.path || node.fullPath || ''
-      const normalizedPath = path.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
-      currentRoles = permissionsMap.value.get(normalizedPath) || []
+      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+      const normalizePath = (p) => {
+        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+      }
+      const normalizedPath = normalizePath(path)
+      // Try exact match first
+      currentRoles = permissionsMap.value.get(normalizedPath)
+      // If not found, try case-insensitive match (but preserve Unicode)
+      if (!currentRoles) {
+        for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+          if (normalizePath(mapPath) === normalizedPath) {
+            currentRoles = mapRoles
+            break
+          }
+        }
+      }
+      currentRoles = currentRoles || []
     } else {
       currentRoles = []
     }
@@ -1054,18 +1238,32 @@ const handleRemoveRole = (nodeId, role) => {
   
   const updatedRoles = currentRoles.filter(r => r !== role)
   
-  // If all roles are removed, set empty array to track removal and uncheck the item
+  // If all roles are removed, handle based on whether item was originally in user's permissions
   if (updatedRoles.length === 0) {
     itemRoles.value.set(nodeId, []) // Set empty array to track that all roles should be removed
-    // Automatically uncheck the item when all roles are removed (regardless of original permissions)
+    
     const checkedSet = new Set(checked.value)
     const markedSet = new Set(markedForRemoval.value)
-    if (checkedSet.has(nodeId)) {
-      checkedSet.delete(nodeId)
-      // Also remove from markedForRemoval if it was there
-      markedSet.delete(nodeId)
+    const originalSet = new Set(originalPermissions.value)
+    const wasOriginallyChecked = originalSet.has(nodeId)
+    
+    if (wasOriginallyChecked) {
+      // Item was originally in user's permissions: mark for removal (*) instead of unchecking
+      // This keeps the same context as manually unchecking the item
+      if (!checkedSet.has(nodeId)) {
+        checkedSet.add(nodeId) // Ensure it's checked
+      }
+      markedSet.add(nodeId) // Mark for removal (*)
       checked.value = Array.from(checkedSet)
       markedForRemoval.value = Array.from(markedSet)
+    } else {
+      // Item is new (not in original permissions): uncheck it
+      if (checkedSet.has(nodeId)) {
+        checkedSet.delete(nodeId)
+        markedSet.delete(nodeId) // Also remove from markedForRemoval if it was there
+        checked.value = Array.from(checkedSet)
+        markedForRemoval.value = Array.from(markedSet)
+      }
     }
   } else {
     itemRoles.value.set(nodeId, updatedRoles)
