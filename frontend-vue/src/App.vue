@@ -141,6 +141,7 @@
               :on-items-selected="handleItemsSelected"
               :on-reload-reports="reloadReports"
               :permissions-data="permissionsData"
+              :on-role-changes="handleRoleChanges"
             />
           </div>
 
@@ -152,6 +153,8 @@
               :new-items="newItems"
               :original-permission-ids="originalPermissionIds"
               :connection-info="connectionInfo"
+              :item-roles="itemRoles"
+              :reports="reports"
               :on-success="showSuccessToast"
               :on-error="showErrorToast"
               :on-check-permissions="handleCheckPermissions"
@@ -209,6 +212,7 @@ const toast = ref({
 })
 
 const permissionsData = ref(null)
+const itemRoles = ref(new Map()) // Track role changes from ReportTree
 
 // Computed
 const currentServerUri = computed(() => {
@@ -378,6 +382,10 @@ const reloadReports = async () => {
 const handleCheckPermissions = (permissions) => {
   // Update the permissions data which will trigger the tree view to update
   permissionsData.value = permissions
+}
+
+const handleRoleChanges = (rolesMap) => {
+  itemRoles.value = rolesMap
 }
 
 // Lifecycle
@@ -685,7 +693,7 @@ onMounted(() => {
 
 .content-grid {
   display: grid;
-  grid-template-columns: 43% 57%;
+  grid-template-columns: 50% 50%;
   gap: 1.5rem;
   flex: 1;
   min-height: 0;

@@ -433,31 +433,19 @@ router.post('/set', async (req, res) => {
             // Simply don't push this policy - effectively removing the user
             return;
           } else {
-            // UPDATE: Add new roles to existing user
-            const existingRoleNames = (policy.Roles || []).map(r => r.Name || r);
-            const newRoles = roles.filter(r => !existingRoleNames.includes(r));
+            // UPDATE: REPLACE roles (not merge) - use the exact roles sent
+            const roleObjects = roles.map(roleName => roleDefinitions[roleName]).filter(r => r);
             
-            if (newRoles.length === 0) {
-              console.log(`  User already has all requested roles`);
-              policies.push({
-                GroupUserName: policy.GroupUserName,
-                Roles: policy.Roles
-              });
+            if (roleObjects.length === 0) {
+              console.log(`  ⚠️  No valid roles provided - skipping user update`);
               return;
             }
 
-            const allRoles = [...policy.Roles];
-            newRoles.forEach(roleName => {
-              if (roleDefinitions[roleName]) {
-                allRoles.push(roleDefinitions[roleName]);
-              }
-            });
-
             policies.push({
               GroupUserName: policy.GroupUserName,
-              Roles: allRoles
+              Roles: roleObjects
             });
-            console.log(`  Updated user "${policy.GroupUserName}" with new roles: ${newRoles.join(', ')}`);
+            console.log(`  Updated user "${policy.GroupUserName}" - REPLACED roles with: ${roles.join(', ')}`);
           }
         } else {
           // Keep other users as-is

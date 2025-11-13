@@ -136,7 +136,7 @@
         <button
           class="apply-btn-minimal"
           @click="handleApplyPermissions"
-          :disabled="loading || selectedItems.length === 0 || selectedAdUsers.length === 0 || selectedRoles.length === 0"
+          :disabled="loading || selectedItems.length === 0 || selectedAdUsers.length === 0 || (!hasRoleChanges && selectedRoles.length === 0)"
         >
           <span v-if="loading" class="spinner-small"></span>
           <span v-else>{{ t('applyPermissions') }}</span>
@@ -559,6 +559,14 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  itemRoles: {
+    type: Map,
+    default: () => new Map()
+  },
+  reports: {
+    type: Array,
+    default: () => []
+  },
   onSuccess: {
     type: Function,
     default: () => {}
@@ -748,6 +756,11 @@ const getRoleText = (role) => {
 
 const isAllSelected = computed(() => {
   return selectedRoles.value.length === availableRoles.length
+})
+
+// Check if there are role changes in the table
+const hasRoleChanges = computed(() => {
+  return props.itemRoles && props.itemRoles.size > 0
 })
 
 const reportCount = computed(() => {
@@ -1121,8 +1134,8 @@ const closeGroupMembersModal = () => {
 }
 
 const handleApplyPermissions = async () => {
-  // Validate: must have either new items or marked for removal items
-  const hasChanges = props.newItems.length > 0 || props.markedForRemovalItems.length > 0
+  // Validate: must have either new items, marked for removal items, or role changes
+  const hasChanges = props.newItems.length > 0 || props.markedForRemovalItems.length > 0 || hasRoleChanges.value
   
   if (!hasChanges) {
     if (props.onError) {
@@ -1141,11 +1154,65 @@ const handleApplyPermissions = async () => {
   }
   userNames = selectedAdUsers.value.map(u => u.name)
 
-  if (selectedRoles.value.length === 0) {
+  // If there are role changes in the table, we can proceed without selectedRoles
+  // Otherwise, we need selectedRoles
+  if (!hasRoleChanges.value && selectedRoles.value.length === 0) {
     if (props.onError) {
       props.onError(t('selectAtLeastOneRole'))
     }
     return
+  }
+
+  // Get items with role changes (items that are in originalPermissions but have role changes)
+  const itemsWithRoleChanges = []
+  if (hasRoleChanges.value && props.itemRoles && props.itemRoles.size > 0) {
+    // We need to map nodeIds to actual items
+    // Check both selectedItems and originalPermissionIds to find items
+    props.itemRoles.forEach((roles, nodeId) => {
+      // Find the item that matches this nodeId
+      let item = props.selectedItems.find(selectedItem => {
+        if (nodeId.startsWith('report_')) {
+          const reportId = nodeId.replace('report_', '')
+          return selectedItem.id === reportId
+        } else if (nodeId.startsWith('folder_')) {
+          const folderPath = nodeId.replace('folder_', '')
+          return selectedItem.type === 'Folder' && selectedItem.path === folderPath
+        }
+        return false
+      })
+      
+      // If not found in selectedItems, check if it's in originalPermissions
+      // In that case, we need to construct the item from the nodeId
+      if (!item && props.originalPermissionIds && props.originalPermissionIds.length > 0) {
+        const isInOriginal = props.originalPermissionIds.some(originalId => originalId === nodeId)
+        if (isInOriginal) {
+          // Construct item from nodeId
+          if (nodeId.startsWith('report_')) {
+            const reportId = nodeId.replace('report_', '')
+            // Find report from reports list
+            const report = props.reports.find(r => r.id === reportId)
+            if (report) {
+              item = report
+            }
+          } else if (nodeId.startsWith('folder_')) {
+            const folderPath = nodeId.replace('folder_', '')
+            item = {
+              type: 'Folder',
+              path: folderPath,
+              name: folderPath.split('/').pop()
+            }
+          }
+        }
+      }
+      
+      // Include items even if roles array is empty (to remove all roles)
+      if (item) {
+        itemsWithRoleChanges.push({
+          item,
+          roles: roles || [] // Ensure it's an array
+        })
+      }
+    })
   }
 
   // Show confirmation for marked items (items to remove permissions)
@@ -1170,25 +1237,28 @@ const handleApplyPermissions = async () => {
     }
   }
 
-  // Show confirmation for new items
+  // Show confirmation message
   let confirmMsg = ''
-  if (props.newItems.length > 0 && props.markedForRemovalItems.length > 0) {
-    confirmMsg = `Apply ${selectedRoles.value.length} role(s) to:\n` +
-      `- ${props.newItems.length} new item(s) (add permissions)\n` +
-      `- ${props.markedForRemovalItems.length} item(s) (remove permissions)\n\n` +
-      `For ${userNames.length} user(s).\n\n` +
-      `Existing permissions will NOT be changed.\n\n` +
-      `Continue?`
-  } else if (props.newItems.length > 0) {
-    confirmMsg = `Add ${selectedRoles.value.length} role(s) to ${props.newItems.length} new item(s)\n` +
-      `for ${userNames.length} user(s).\n\n` +
-      `Existing permissions will NOT be changed.\n\n` +
-      `Continue?`
-  } else {
-    confirmMsg = `Remove permissions from ${props.markedForRemovalItems.length} item(s)\n` +
-      `for ${userNames.length} user(s).\n\n` +
-      `Continue?`
+  const parts = []
+  
+  if (itemsWithRoleChanges.length > 0) {
+    parts.push(`Update roles for ${itemsWithRoleChanges.length} item(s) (modify existing permissions)`)
   }
+  if (props.newItems.length > 0) {
+    parts.push(`Add permissions to ${props.newItems.length} new item(s)`)
+  }
+  if (props.markedForRemovalItems.length > 0) {
+    parts.push(`Remove permissions from ${props.markedForRemovalItems.length} item(s)`)
+  }
+  
+  if (parts.length === 0) {
+    if (props.onError) {
+      props.onError('No changes to apply')
+    }
+    return
+  }
+  
+  confirmMsg = parts.join('\n') + `\n\nFor ${userNames.length} user(s).\n\nContinue?`
 
   if (!window.confirm(confirmMsg)) {
     return
@@ -1201,19 +1271,69 @@ const handleApplyPermissions = async () => {
   const errors = []
 
   try {
+    // Apply role updates to items with role changes
+    if (itemsWithRoleChanges.length > 0) {
+      for (const user of userNames) {
+        for (const { item, roles } of itemsWithRoleChanges) {
+          try {
+            const itemType = item.type === 'Folder' ? 'Folder' : 'Report'
+
+            // If roles array is empty, it means remove all roles
+            // Otherwise, apply the updated roles
+            const response = await axios.post('/api/permissions/set', {
+              serverUri: props.connectionInfo.serverUri,
+              itemId: item.id,
+              itemPath: item.path || item.fullPath,
+              userName: user,
+              roles: roles.length === 0 ? [] : roles, // Empty array means remove all permissions
+              itemType: itemType
+            })
+
+            if (response.data.success) {
+              successCount++
+            } else {
+              failCount++
+              errors.push(`${user} → ${item.name}: Failed to update roles`)
+            }
+          } catch (err) {
+            failCount++
+            errors.push(`${user} → ${item.name}: ${err.message}`)
+          }
+        }
+      }
+    }
+
     // ONLY apply permissions to NEW items (not items that already have permissions)
     if (props.newItems && props.newItems.length > 0) {
       for (const user of userNames) {
         for (const item of props.newItems) {
           try {
             const itemType = item.type === 'Folder' ? 'Folder' : 'Report'
+            
+            // Get roles for this item from itemRoles, or use selectedRoles, or default to Browser
+            let rolesToApply = selectedRoles.value
+            if (props.itemRoles && props.itemRoles.size > 0) {
+              // Find nodeId for this item
+              const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
+              if (props.itemRoles.has(nodeId)) {
+                const itemRolesList = props.itemRoles.get(nodeId)
+                // If itemRoles has roles, use them; otherwise use selectedRoles or Browser
+                rolesToApply = itemRolesList && itemRolesList.length > 0 ? itemRolesList : (selectedRoles.value.length > 0 ? selectedRoles.value : ['Browser'])
+              } else {
+                // If not in itemRoles, use selectedRoles or default to Browser
+                rolesToApply = selectedRoles.value.length > 0 ? selectedRoles.value : ['Browser']
+              }
+            } else {
+              // If no itemRoles, use selectedRoles or default to Browser
+              rolesToApply = selectedRoles.value.length > 0 ? selectedRoles.value : ['Browser']
+            }
 
             const response = await axios.post('/api/permissions/set', {
               serverUri: props.connectionInfo.serverUri,
               itemId: item.id,
               itemPath: item.path || item.fullPath,
               userName: user,
-              roles: selectedRoles.value,
+              roles: rolesToApply,
               itemType: itemType
             })
 
@@ -1262,15 +1382,21 @@ const handleApplyPermissions = async () => {
       }
     }
 
-    const totalChanged = props.newItems.length + props.markedForRemovalItems.length
+    const totalChanged = itemsWithRoleChanges.length + props.newItems.length + props.markedForRemovalItems.length
     
     if (failCount === 0) {
       if (props.onSuccess) {
-        const message = props.newItems.length > 0 && props.markedForRemovalItems.length > 0
-          ? `Successfully updated ${successCount} permissions (${props.newItems.length} added, ${props.markedForRemovalItems.length} removed)`
-          : props.newItems.length > 0
-            ? `Successfully added ${successCount} permissions`
-            : `Successfully removed ${successCount} permissions`
+        const parts = []
+        if (itemsWithRoleChanges.length > 0) {
+          parts.push(`${itemsWithRoleChanges.length} role update(s)`)
+        }
+        if (props.newItems.length > 0) {
+          parts.push(`${props.newItems.length} permission(s) added`)
+        }
+        if (props.markedForRemovalItems.length > 0) {
+          parts.push(`${props.markedForRemovalItems.length} permission(s) removed`)
+        }
+        const message = `Successfully applied ${successCount} change(s): ${parts.join(', ')}`
         props.onSuccess(message)
       }
       
