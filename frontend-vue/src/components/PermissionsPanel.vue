@@ -136,7 +136,7 @@
         <button
           class="apply-btn-minimal"
           @click="handleApplyPermissions"
-          :disabled="loading || selectedItems.length === 0 || selectedAdUsers.length === 0 || (!hasRoleChanges && selectedRoles.length === 0)"
+          :disabled="loading || selectedItems.length === 0 || selectedAdUsers.length === 0 || !hasActualChanges"
         >
           <span v-if="loading" class="spinner-small"></span>
           <span v-else>{{ t('applyPermissions') }}</span>
@@ -567,6 +567,10 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  permissionsData: {
+    type: Array,
+    default: null
+  },
   onSuccess: {
     type: Function,
     default: () => {}
@@ -587,6 +591,30 @@ const props = defineProps({
 
 const userName = ref('')
 const selectedRoles = ref(['Browser'])
+
+// Watch for new items and automatically select Browser role if not already selected
+watch(() => props.newItems, (newItems) => {
+  if (newItems && newItems.length > 0) {
+    // If new items are selected and no roles are selected, automatically select Browser
+    if (selectedRoles.value.length === 0) {
+      selectedRoles.value = ['Browser']
+    }
+  }
+}, { deep: true })
+
+// Also watch selectedItems to auto-select Browser when new items are first selected
+watch(() => props.selectedItems, (selectedItems) => {
+  // Check if there are any new items (not in original permissions)
+  const hasNewItems = selectedItems.some(item => {
+    const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
+    return !props.originalPermissionIds.includes(nodeId)
+  })
+  
+  if (hasNewItems && selectedRoles.value.length === 0) {
+    // If new items are selected and no roles are selected, automatically select Browser
+    selectedRoles.value = ['Browser']
+  }
+}, { deep: true })
 const loading = ref(false)
 const checkLoading = ref(false)
 const dropdownOpen = ref(false)
@@ -763,22 +791,154 @@ const hasRoleChanges = computed(() => {
   return props.itemRoles && props.itemRoles.size > 0
 })
 
-const reportCount = computed(() => {
-  const count = props.selectedItems.filter(i => {
-    // Debug: log item types
-    if (i.type) {
-      console.log('Item type:', i.type, 'Name:', i.name)
+// Build a map of original permissions: nodeId -> roles
+const originalPermissionsMap = computed(() => {
+  const map = new Map()
+  if (!props.permissionsData || props.permissionsData.length === 0) {
+    return map
+  }
+  
+  props.permissionsData.forEach(permission => {
+    const path = permission.path || permission.fullPath || ''
+    const permissionName = permission.name || ''
+    
+    // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+    const normalizePath = (p) => {
+      if (!p) return ''
+      // Decode URL encoding if present
+      try {
+        p = decodeURIComponent(p)
+      } catch (e) {
+        // If decoding fails, use original
+      }
+      return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
     }
+    const roles = permission.roles || []
+    
+    // Find the nodeId for this permission
+    if (permission.itemType === 'Folder') {
+      const nodeId = `folder_${permission.path}`
+      map.set(nodeId, roles)
+    } else if (permission.itemType === 'Report') {
+      // Try to find report by ID first (most reliable, especially for Persian characters)
+      let report = null
+      if (permission.id) {
+        report = props.reports.find(r => r.id === permission.id)
+      }
+      
+      // If not found by ID, try to find by path/name matching (with better Unicode handling)
+      if (!report) {
+        const normalizedPermissionPath = normalizePath(path)
+        const normalizedPermissionName = normalizePath(permissionName)
+        const permissionFolderPath = permission.folderPath || (path.includes('/') ? path.substring(0, path.lastIndexOf('/')) || '/' : '/')
+        
+        report = props.reports.find(r => {
+          const reportPath = r.path || '/'
+          const reportName = r.name || ''
+          const reportFullPath = r.fullPath || (r.path === '/' ? `/${r.name}` : r.path === '' ? `/${r.name}` : `${r.path}/${r.name}`)
+          
+          const normalizedReportPath = normalizePath(reportPath)
+          const normalizedReportName = normalizePath(reportName)
+          const normalizedReportFullPath = normalizePath(reportFullPath)
+          const normalizedPermissionFolderPath = normalizePath(permissionFolderPath)
+          
+          // Strategy 1: Match by full path (most common - CatalogItems path matches report fullPath)
+          if (normalizedReportFullPath === normalizedPermissionPath) {
+            return true
+          }
+          
+          // Strategy 2: Match folder path + name separately
+          if (normalizedPermissionFolderPath === normalizedReportPath && normalizedPermissionName === normalizedReportName) {
+            return true
+          }
+          
+          // Strategy 3: Match just by name (for cases where path comparison fails due to encoding)
+          if (normalizedPermissionName && normalizedReportName && 
+              normalizedPermissionName === normalizedReportName &&
+              (normalizedPermissionFolderPath === '/' || normalizedPermissionFolderPath === normalizedReportPath || normalizedReportPath === '/')) {
+            return true
+          }
+          
+          // Strategy 4: Match by extracting name from permission path
+          const pathParts = normalizedPermissionPath.split('/').filter(p => p)
+          const lastPathPart = pathParts[pathParts.length - 1] || ''
+          if (lastPathPart && normalizedReportName === normalizePath(lastPathPart)) {
+            if (normalizedReportPath === normalizedPermissionFolderPath || 
+                (normalizedPermissionFolderPath === '/' && normalizedReportPath === '/') ||
+                (normalizedPermissionPath === normalizedReportFullPath)) {
+              return true
+            }
+          }
+          
+          // Strategy 5: Exact name match with compatible paths (fallback)
+          if (permissionName === reportName && 
+              (normalizedPermissionFolderPath === '/' || normalizedReportPath === '/') &&
+              (normalizedPermissionPath.includes(reportName) || normalizedReportFullPath.includes(permissionName))) {
+            return true
+          }
+          
+          return false
+        })
+      }
+      
+      if (report) {
+        const nodeId = `report_${report.id}`
+        map.set(nodeId, roles)
+      } else {
+        console.warn(`⚠ Could not find report for permission in originalPermissionsMap:`, {
+          permissionPath: path,
+          permissionFolderPath: permission.folderPath || 'N/A',
+          permissionName: permissionName,
+          permissionId: permission.id || 'N/A'
+        })
+      }
+    }
+  })
+  
+  return map
+})
+
+// Check if there are actual changes (not just itemRoles entries, but actual differences)
+const hasActualRoleChanges = computed(() => {
+  if (!props.itemRoles || props.itemRoles.size === 0) {
+    return false
+  }
+  
+  const originalMap = originalPermissionsMap.value
+  
+  // Check each item in itemRoles to see if it's different from original
+  for (const [nodeId, currentRoles] of props.itemRoles.entries()) {
+    const originalRoles = originalMap.get(nodeId) || []
+    
+    // Normalize roles arrays for comparison (sort and compare)
+    const normalizeRoles = (roles) => [...roles].sort().join(',')
+    const currentRolesStr = normalizeRoles(currentRoles)
+    const originalRolesStr = normalizeRoles(originalRoles)
+    
+    // If roles are different, there's an actual change
+    if (currentRolesStr !== originalRolesStr) {
+      return true
+    }
+  }
+  
+  return false
+})
+
+// Check if there are any actual changes (new items, removals, or role changes)
+const hasActualChanges = computed(() => {
+  return props.newItems.length > 0 || 
+         props.markedForRemovalItems.length > 0 || 
+         hasActualRoleChanges.value
+})
+
+const reportCount = computed(() => {
+  return props.selectedItems.filter(i => {
     return i.type && (i.type.includes('Report') || i.type.includes('PBIX') || i.type.includes('RDL'))
   }).length
-  console.log('Report count:', count)
-  return count
 })
 
 const folderCount = computed(() => {
-  const count = props.selectedItems.filter(i => i.type === 'Folder').length
-  console.log('Folder count:', count)
-  return count
+  return props.selectedItems.filter(i => i.type === 'Folder').length
 })
 
 const selectedFolders = computed(() => {
@@ -1134,10 +1294,8 @@ const closeGroupMembersModal = () => {
 }
 
 const handleApplyPermissions = async () => {
-  // Validate: must have either new items, marked for removal items, or role changes
-  const hasChanges = props.newItems.length > 0 || props.markedForRemovalItems.length > 0 || hasRoleChanges.value
-  
-  if (!hasChanges) {
+  // Validate: must have actual changes
+  if (!hasActualChanges.value) {
     if (props.onError) {
       props.onError('No changes to apply. All checked items already have the selected permissions.')
     }
@@ -1156,19 +1314,36 @@ const handleApplyPermissions = async () => {
 
   // If there are role changes in the table, we can proceed without selectedRoles
   // Otherwise, we need selectedRoles
-  if (!hasRoleChanges.value && selectedRoles.value.length === 0) {
+  if (!hasActualRoleChanges.value && selectedRoles.value.length === 0 && props.newItems.length > 0) {
     if (props.onError) {
       props.onError(t('selectAtLeastOneRole'))
     }
     return
   }
 
-  // Get items with role changes (items that are in originalPermissions but have role changes)
+  // Get items with role changes (items that are in originalPermissions but have actual role changes)
+  // Separate items with empty roles (removing all roles) from items with role modifications
   const itemsWithRoleChanges = []
-  if (hasRoleChanges.value && props.itemRoles && props.itemRoles.size > 0) {
+  const itemsRemovingAllRoles = [] // Items where all roles are removed (empty roles array)
+  const markedForRemovalNodeIds = new Set()
+  props.markedForRemovalItems.forEach(item => {
+    if (item.id) {
+      markedForRemovalNodeIds.add(`report_${item.id}`)
+    } else if (item.path) {
+      markedForRemovalNodeIds.add(`folder_${item.path}`)
+    }
+  })
+  
+  if (hasActualRoleChanges.value && props.itemRoles && props.itemRoles.size > 0) {
+    const originalMap = originalPermissionsMap.value
     // We need to map nodeIds to actual items
     // Check both selectedItems and originalPermissionIds to find items
     props.itemRoles.forEach((roles, nodeId) => {
+      // Skip items marked for removal - they will be handled in the removal section
+      if (markedForRemovalNodeIds.has(nodeId)) {
+        return
+      }
+      
       // Find the item that matches this nodeId
       let item = props.selectedItems.find(selectedItem => {
         if (nodeId.startsWith('report_')) {
@@ -1205,39 +1380,50 @@ const handleApplyPermissions = async () => {
         }
       }
       
-      // Include items even if roles array is empty (to remove all roles)
+      // Only include items where roles have actually changed
       if (item) {
-        itemsWithRoleChanges.push({
-          item,
-          roles: roles || [] // Ensure it's an array
-        })
+        const originalRoles = originalMap.get(nodeId) || []
+        
+        // Check if all roles are being removed (empty roles array)
+        if (!roles || roles.length === 0) {
+          // This is removing all roles - treat as removal, not role update
+          itemsRemovingAllRoles.push(item)
+        } else {
+          // Normalize roles arrays for comparison
+          const normalizeRoles = (roles) => [...roles].sort().join(',')
+          const currentRolesStr = normalizeRoles(roles || [])
+          const originalRolesStr = normalizeRoles(originalRoles)
+          
+          // Only add if roles are different
+          if (currentRolesStr !== originalRolesStr) {
+            itemsWithRoleChanges.push({
+              item,
+              roles: roles || [] // Ensure it's an array
+            })
+          }
+        }
       }
     })
   }
 
-  // Show confirmation for marked items (items to remove permissions)
-  if (props.markedForRemovalItems && props.markedForRemovalItems.length > 0) {
-    const itemsList = props.markedForRemovalItems.slice(0, 5).map(item => {
-      const icon = item.type === 'Folder' ? '📁' : '📊'
-      return `${icon} ${item.name || item.path.split('/').pop()}`
-    }).join('\n')
-    
-    const moreText = props.markedForRemovalItems.length > 5 
-      ? `\n... and ${props.markedForRemovalItems.length - 5} more items` 
-      : ''
-    
-    const removeConfirmMsg = `⚠️ REMOVE PERMISSIONS WARNING\n\n` +
-      `You are about to REMOVE permissions for user(s) from ${props.markedForRemovalItems.length} item(s):\n\n` +
-      `${itemsList}${moreText}\n\n` +
-      `This action will revoke access to these items.\n\n` +
-      `Do you want to continue?`
-
-    if (!window.confirm(removeConfirmMsg)) {
-      return
-    }
-  }
-
-  // Show confirmation message
+  // Combine all removal items (marked for removal + items with all roles removed)
+  // Remove duplicates by comparing item IDs/paths
+  const allRemovalItemsMap = new Map()
+  props.markedForRemovalItems.forEach(item => {
+    const key = item.id ? `report_${item.id}` : `folder_${item.path}`
+    allRemovalItemsMap.set(key, item)
+  })
+  itemsRemovingAllRoles.forEach(item => {
+    const key = item.id ? `report_${item.id}` : `folder_${item.path}`
+    allRemovalItemsMap.set(key, item)
+  })
+  const allRemovalItems = Array.from(allRemovalItemsMap.values())
+  
+  // Separate reports and folders for better messaging
+  const removalReports = allRemovalItems.filter(item => item.type !== 'Folder')
+  const removalFolders = allRemovalItems.filter(item => item.type === 'Folder')
+  
+  // Show single combined confirmation message
   let confirmMsg = ''
   const parts = []
   
@@ -1247,8 +1433,18 @@ const handleApplyPermissions = async () => {
   if (props.newItems.length > 0) {
     parts.push(`Add permissions to ${props.newItems.length} new item(s)`)
   }
-  if (props.markedForRemovalItems.length > 0) {
-    parts.push(`Remove permissions from ${props.markedForRemovalItems.length} item(s)`)
+  if (allRemovalItems.length > 0) {
+    // Build removal message with reports and folders separated
+    const removalParts = []
+    if (removalReports.length > 0) {
+      removalParts.push(`Remove access from ${removalReports.length} report(s)`)
+    }
+    if (removalFolders.length > 0) {
+      removalParts.push(`Remove access from ${removalFolders.length} folder(s)`)
+    }
+    if (removalParts.length > 0) {
+      parts.push(removalParts.join(' and '))
+    }
   }
   
   if (parts.length === 0) {
@@ -1258,7 +1454,47 @@ const handleApplyPermissions = async () => {
     return
   }
   
-  confirmMsg = parts.join('\n') + `\n\nFor ${userNames.length} user(s).\n\nContinue?`
+  // Build detailed confirmation message
+  // If only removing permissions, show detailed warning message
+  if (allRemovalItems.length > 0 && itemsWithRoleChanges.length === 0 && props.newItems.length === 0) {
+    // Only removal - show detailed warning message
+    let warningDetails = `⚠️ REMOVING ACCESS\n\n`
+    
+    if (removalReports.length > 0) {
+      const reportsList = removalReports.slice(0, 5).map(item => 
+        `📊 ${item.name || item.path.split('/').pop()}`
+      ).join('\n')
+      const moreReports = removalReports.length > 5 
+        ? `\n... and ${removalReports.length - 5} more report(s)` 
+        : ''
+      warningDetails += `By removing all roles, you will lose access to ${removalReports.length} report(s):\n${reportsList}${moreReports}`
+    }
+    
+    if (removalFolders.length > 0) {
+      if (removalReports.length > 0) {
+        warningDetails += `\n\n`
+      }
+      const foldersList = removalFolders.slice(0, 5).map(item => 
+        `📁 ${item.name || item.path.split('/').pop()}`
+      ).join('\n')
+      const moreFolders = removalFolders.length > 5 
+        ? `\n... and ${removalFolders.length - 5} more folder(s)` 
+        : ''
+      warningDetails += `Remove access to ${removalFolders.length} folder(s):\n${foldersList}${moreFolders}`
+    }
+    
+    warningDetails += `\n\nThis action will revoke all access to these items.\n\nFor ${userNames.length} user(s).\n\nContinue?`
+    
+    confirmMsg = warningDetails
+  } else {
+    // Mixed operations - show summary with optional warning
+    confirmMsg = parts.join('\n') + `\n\nFor ${userNames.length} user(s).\n\nContinue?`
+    
+    // Show warning if removing permissions (but not as detailed since there are other operations)
+    if (allRemovalItems.length > 0) {
+      confirmMsg = `⚠️ PERMISSIONS UPDATE\n\n` + confirmMsg + `\n\n⚠️ Note: ${allRemovalItems.length} item(s) will have access removed.`
+    }
+  }
 
   if (!window.confirm(confirmMsg)) {
     return
@@ -1351,10 +1587,10 @@ const handleApplyPermissions = async () => {
       }
     }
 
-    // Remove permissions from marked items
-    if (props.markedForRemovalItems && props.markedForRemovalItems.length > 0) {
+    // Remove permissions from marked items and items with all roles removed
+    if (allRemovalItems.length > 0) {
       for (const user of userNames) {
-        for (const item of props.markedForRemovalItems) {
+        for (const item of allRemovalItems) {
           try {
             const itemType = item.type === 'Folder' ? 'Folder' : 'Report'
 
@@ -1382,7 +1618,7 @@ const handleApplyPermissions = async () => {
       }
     }
 
-    const totalChanged = itemsWithRoleChanges.length + props.newItems.length + props.markedForRemovalItems.length
+    const totalChanged = itemsWithRoleChanges.length + props.newItems.length + allRemovalItems.length
     
     if (failCount === 0) {
       if (props.onSuccess) {
@@ -1393,8 +1629,8 @@ const handleApplyPermissions = async () => {
         if (props.newItems.length > 0) {
           parts.push(`${props.newItems.length} permission(s) added`)
         }
-        if (props.markedForRemovalItems.length > 0) {
-          parts.push(`${props.markedForRemovalItems.length} permission(s) removed`)
+        if (allRemovalItems.length > 0) {
+          parts.push(`${allRemovalItems.length} permission(s) removed`)
         }
         const message = `Successfully applied ${successCount} change(s): ${parts.join(', ')}`
         props.onSuccess(message)
@@ -1402,11 +1638,12 @@ const handleApplyPermissions = async () => {
       
       // AUTO-REFRESH: Re-check permissions after successful changes
       // This updates the "original permissions" state so next operation works correctly
-      console.log('🔄 Auto-refreshing permissions after successful update...')
-      setTimeout(async () => {
-        await handleCheckPermissions()
-        console.log('✓ Permissions refreshed')
-      }, 1000) // Wait 1 second for server to propagate changes
+      // Only auto-refresh if exactly one user is selected (check permissions requires single user)
+      if (selectedAdUsers.value.length === 1) {
+        setTimeout(async () => {
+          await handleCheckPermissions()
+        }, 1000) // Wait 1 second for server to propagate changes
+      }
       
     } else {
       if (props.onError) {

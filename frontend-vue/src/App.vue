@@ -155,6 +155,7 @@
               :connection-info="connectionInfo"
               :item-roles="itemRoles"
               :reports="reports"
+              :permissions-data="permissionsData"
               :on-success="showSuccessToast"
               :on-error="showErrorToast"
               :on-check-permissions="handleCheckPermissions"

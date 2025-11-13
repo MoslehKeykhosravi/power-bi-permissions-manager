@@ -92,7 +92,7 @@
             ×
           </button>
         </span>
-        <div class="role-add-wrapper">
+        <div v-if="!hasAllRoles" class="role-add-wrapper">
           <button
             @click.stop="$emit('toggle-role-picker', nodeId)"
             class="role-add-btn"
@@ -105,14 +105,33 @@
             class="role-picker-dropdown"
             @click.stop
           >
+            <!-- Select All option - only show if there are unassigned roles -->
             <div
-              v-for="role in availableRoles"
+              v-if="unassignedRoles.length > 0"
+              @click="handleSelectAllRoles"
+              class="role-picker-item select-all-item"
+            >
+              <strong>{{ t('selectAll') || 'Select All' }}</strong>
+            </div>
+            <div
+              v-if="unassignedRoles.length > 0 && unassignedRoles.length < availableRoles.length"
+              class="role-picker-divider"
+            ></div>
+            <!-- Only show roles that are NOT already assigned -->
+            <div
+              v-for="role in unassignedRoles"
               :key="role"
               @click="$emit('add-role', nodeId, role)"
               class="role-picker-item"
-              :class="{ disabled: currentRoles.includes(role) }"
             >
               {{ getRoleText(role) }}
+            </div>
+            <!-- Show message if all roles are assigned -->
+            <div
+              v-if="unassignedRoles.length === 0"
+              class="role-picker-item disabled empty-message"
+            >
+              {{ t('allRolesAssigned') || 'All roles assigned' }}
             </div>
           </div>
         </div>
@@ -143,6 +162,7 @@
       @save-editing="$emit('save-editing', $event)"
       @cancel-editing="$emit('cancel-editing')"
       @add-role="(nodeId, role) => $emit('add-role', nodeId, role)"
+      @add-all-roles="(nodeId, roles) => $emit('add-all-roles', nodeId, roles)"
       @remove-role="(nodeId, role) => $emit('remove-role', nodeId, role)"
       @toggle-role-picker="$emit('toggle-role-picker', $event)"
     />
@@ -209,7 +229,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['toggle-expand', 'check', 'start-editing', 'update-editing', 'save-editing', 'cancel-editing', 'add-role', 'remove-role', 'toggle-role-picker'])
+const emit = defineEmits(['toggle-expand', 'check', 'start-editing', 'update-editing', 'save-editing', 'cancel-editing', 'add-role', 'add-all-roles', 'remove-role', 'toggle-role-picker'])
 
 const nameInput = ref(null)
 
@@ -253,8 +273,22 @@ const currentRoles = computed(() => {
     const path = props.node.type === 'folder' 
       ? props.node.path 
       : props.node.path || props.node.fullPath || ''
-    const normalizedPath = path.toLowerCase().replace(/\\/g, '/').replace(/\/+/g, '/')
-    const roles = props.permissionsMap.get(normalizedPath)
+    // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+    const normalizePath = (p) => {
+      return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+    }
+    const normalizedPath = normalizePath(path)
+    // Try exact match first
+    let roles = props.permissionsMap.get(normalizedPath)
+    // If not found, try case-insensitive match (but preserve Unicode)
+    if (!roles) {
+      for (const [mapPath, mapRoles] of props.permissionsMap.entries()) {
+        if (normalizePath(mapPath) === normalizedPath) {
+          roles = mapRoles
+          break
+        }
+      }
+    }
     if (roles && roles.length > 0) {
       return roles
     }
@@ -262,6 +296,25 @@ const currentRoles = computed(() => {
   
   return []
 })
+
+// Check if all available roles are selected
+const hasAllRoles = computed(() => {
+  const roles = currentRoles.value
+  return roles.length === availableRoles.length && 
+         availableRoles.every(role => roles.includes(role))
+})
+
+// Get roles that are NOT assigned to this item
+const unassignedRoles = computed(() => {
+  return availableRoles.filter(role => !currentRoles.value.includes(role))
+})
+
+// Handle select all roles for this item
+const handleSelectAllRoles = () => {
+  // Emit a special event to add all unassigned roles at once
+  // This will be handled by the parent to add all roles in one operation
+  emit('add-all-roles', props.nodeId, unassignedRoles.value)
+}
 
 watch(isEditing, (newVal) => {
   if (newVal) {
@@ -352,11 +405,17 @@ const getRoleText = (role) => {
 .table-tree-row {
   border-bottom: 1px solid var(--border-color);
   min-height: 48px;
+  background: transparent;
 }
 
 .table-tree-row td {
   padding: 12px 16px;
   vertical-align: middle;
+}
+
+/* No background for checked items - keep transparent */
+.table-tree-row:not(.row-marked-removal) {
+  background: transparent;
 }
 
 .table-tree-row.row-marked-removal {
@@ -458,6 +517,18 @@ const getRoleText = (role) => {
   background: #2c2c2c;
 }
 
+/* When checkbox is checked but not marked for removal - green border to match checkmark */
+.checkbox-input:checked + .checkbox-box:not(.marked-removal) {
+  background: white;
+  border-color: #4caf50;
+}
+
+.dark-mode .checkbox-input:checked + .checkbox-box:not(.marked-removal) {
+  background: #2c2c2c;
+  border-color: #66bb6a;
+}
+
+/* Marked for removal - same styling whether from unchecking or removing all roles */
 .checkbox-box.marked-removal {
   border-color: #f44336;
   background: #ffebee;
@@ -468,12 +539,23 @@ const getRoleText = (role) => {
   background: rgba(244, 67, 54, 0.2);
 }
 
+/* Ensure marked-removal styling applies even when checkbox input is checked */
+.checkbox-input:checked + .checkbox-box.marked-removal {
+  border-color: #f44336;
+  background: #ffebee;
+}
+
+.dark-mode .checkbox-input:checked + .checkbox-box.marked-removal {
+  border-color: #ef5350;
+  background: rgba(244, 67, 54, 0.2);
+}
+
 .checkbox-checkmark {
-  color: #2196f3;
+  color: #4caf50;
 }
 
 .dark-mode .checkbox-checkmark {
-  color: #64b5f6;
+  color: #66bb6a;
 }
 
 .removal-mark {
@@ -481,6 +563,13 @@ const getRoleText = (role) => {
   font-size: 1.2rem;
   font-weight: bold;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 .dark-mode .removal-mark {
@@ -670,6 +759,44 @@ const getRoleText = (role) => {
 .role-picker-item.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  color: #999;
+}
+
+.role-picker-item.select-all-item {
+  font-weight: 600;
+  color: #2196f3;
+  background: #f5f8ff;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.dark-mode .role-picker-item.select-all-item {
+  color: #64b5f6;
+  background: #1a2332;
+  border-bottom-color: #444;
+}
+
+.role-picker-item.select-all-item:hover {
+  background: #e3f2fd;
+}
+
+.dark-mode .role-picker-item.select-all-item:hover {
+  background: #2c3e50;
+}
+
+.role-picker-divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}
+
+.dark-mode .role-picker-divider {
+  background: #444;
+}
+
+.role-picker-item.empty-message {
+  font-style: italic;
+  text-align: center;
+  padding: 12px;
   color: #999;
 }
 </style>

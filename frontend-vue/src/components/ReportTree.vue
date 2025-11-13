@@ -463,6 +463,11 @@ watch(allNodeIds, () => {
 watch(() => props.permissionsData, (newPermissions) => {
   if (!newPermissions || newPermissions.length === 0) {
     permissionsMap.value = new Map()
+    // Clear original permissions when no permissions data (e.g., new user selected)
+    originalPermissions.value = []
+    checked.value = []
+    markedForRemoval.value = []
+    itemRoles.value = new Map()
     return
   }
   
@@ -475,10 +480,19 @@ watch(() => props.permissionsData, (newPermissions) => {
   const newPermissionsMap = new Map()
   const newCheckedIds = []
   
-  newPermissions.forEach(permission => {
+  newPermissions.forEach((permission, idx) => {
     const path = permission.path || permission.fullPath || ''
+    const permissionName = permission.name || ''
+    
     // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
     const normalizePath = (p) => {
+      if (!p) return ''
+      // Decode URL encoding if present
+      try {
+        p = decodeURIComponent(p)
+      } catch (e) {
+        // If decoding fails, use original
+      }
       return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
     }
     const normalizedPath = normalizePath(path)
@@ -493,69 +507,95 @@ watch(() => props.permissionsData, (newPermissions) => {
       const folderId = `folder_${permission.path}`
       newCheckedIds.push(folderId)
     } else if (permission.itemType === 'Report') {
-      // Try to find report by ID first (more reliable, especially for Persian characters)
+      // Try to find report by ID first (most reliable, especially for Persian characters)
       let report = null
       if (permission.id) {
         report = props.reports.find(r => r.id === permission.id)
-        if (report) {
-          console.log(`✓ Matched report by ID: ${permission.id} -> ${report.name}`)
-        }
       }
       
-      // If not found by ID, try to find by path (with better Unicode handling)
+      // If not found by ID, try to find by path/name matching (with better Unicode handling)
       if (!report) {
-        // Normalize paths: handle Unicode properly, don't use toLowerCase on Persian chars
-        const normalizePath = (p) => {
-          if (!p) return ''
-          // Decode URL encoding if present
-          try {
-            p = decodeURIComponent(p)
-          } catch (e) {
-            // If decoding fails, use original
-          }
-          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
-        }
         const normalizedPermissionPath = normalizePath(path)
+        const normalizedPermissionName = normalizePath(permissionName)
+        const permissionFolderPath = permission.folderPath || (path.includes('/') ? path.substring(0, path.lastIndexOf('/')) || '/' : '/')
         
         report = props.reports.find(r => {
-          const reportPath = r.path || r.fullPath || ''
+          const reportPath = r.path || '/'
+          const reportName = r.name || ''
+          const reportFullPath = r.fullPath || (r.path === '/' ? `/${r.name}` : r.path === '' ? `/${r.name}` : `${r.path}/${r.name}`)
+          
           const normalizedReportPath = normalizePath(reportPath)
+          const normalizedReportName = normalizePath(reportName)
+          const normalizedReportFullPath = normalizePath(reportFullPath)
+          const normalizedPermissionFolderPath = normalizePath(permissionFolderPath)
           
-          // Try exact match
-          if (normalizedReportPath === normalizedPermissionPath) {
+          // Strategy 1: Match by full path (most common - CatalogItems path matches report fullPath)
+          if (normalizedReportFullPath === normalizedPermissionPath) {
             return true
           }
           
-          // Try matching by full path (path + name)
-          const reportFullPath = r.fullPath || (r.path === '/' ? `/${r.name}` : `${r.path}/${r.name}`)
-          const normalizedFullPath = normalizePath(reportFullPath)
-          if (normalizedFullPath === normalizedPermissionPath) {
+          // Strategy 2: Match by ID (check again here in case ID wasn't available earlier)
+          if (permission.id && r.id === permission.id) {
             return true
           }
           
-          // Try matching just the name
-          if (r.name && normalizePath(r.name) === normalizePath(path.split('/').pop())) {
+          // Strategy 3: Match folder path + name separately (CatalogItems returns folder path separately)
+          if (normalizedPermissionFolderPath === normalizedReportPath && normalizedPermissionName === normalizedReportName) {
+            return true
+          }
+          
+          // Strategy 4: Match just by name with compatible paths (for Persian characters in root folder)
+          if (normalizedPermissionName && normalizedReportName && 
+              normalizedPermissionName === normalizedReportName &&
+              (normalizedPermissionFolderPath === '/' || normalizedPermissionFolderPath === normalizedReportPath || normalizedReportPath === '/')) {
+            return true
+          }
+          
+          // Strategy 5: Match by extracting name from permission path
+          const pathParts = normalizedPermissionPath.split('/').filter(p => p)
+          const lastPathPart = pathParts[pathParts.length - 1] || ''
+          if (lastPathPart && normalizedReportName === normalizePath(lastPathPart)) {
+            if (normalizedReportPath === normalizedPermissionFolderPath || 
+                (normalizedPermissionFolderPath === '/' && normalizedReportPath === '/') ||
+                (normalizedPermissionPath === normalizedReportFullPath)) {
+              return true
+            }
+          }
+          
+          // Strategy 6: Exact name match with compatible paths (fallback)
+          if (permissionName === reportName && 
+              (normalizedPermissionFolderPath === '/' || normalizedReportPath === '/') &&
+              (normalizedPermissionPath.includes(reportName) || normalizedReportFullPath.includes(permissionName))) {
             return true
           }
           
           return false
         })
-        
-        if (report) {
-          console.log(`✓ Matched report by path: "${path}" -> "${report.name}" (ID: ${report.id})`)
-        }
       }
       
       if (report) {
         const reportId = `report_${report.id}`
         newCheckedIds.push(reportId)
+        // Also update permissionsMap with the report's fullPath for consistency
+        const reportFullPath = report.fullPath || (report.path === '/' ? `/${report.name}` : `${report.path}/${report.name}`)
+        const normalizedReportFullPath = normalizePath(reportFullPath)
+        if (roles.length > 0) {
+          newPermissionsMap.set(normalizedReportFullPath, roles)
+        }
       } else {
         console.warn(`⚠ Could not find report for permission:`, {
-          path: path,
-          id: permission.id || 'N/A',
-          type: permission.type || permission.catalogType || 'N/A',
-          name: permission.name || 'N/A',
-          availableReports: props.reports.map(r => ({ id: r.id, name: r.name, path: r.path, fullPath: r.fullPath }))
+          permissionPath: path,
+          permissionFolderPath: permission.folderPath || 'N/A',
+          permissionName: permissionName,
+          permissionId: permission.id || 'N/A',
+          permissionType: permission.type || permission.catalogType || 'N/A',
+          availableReportsCount: props.reports.length,
+          sampleReports: props.reports.slice(0, 3).map(r => ({ 
+            id: r.id, 
+            name: r.name, 
+            path: r.path, 
+            fullPath: r.fullPath 
+          }))
         })
       }
     }
@@ -791,6 +831,9 @@ const handleCheck = ({ nodeId, node, isChecked, isMarkedForRemoval }) => {
       })
     } else {
       // State: Unchecked -> Checked (for items with original permissions)
+      // Add to checkedSet so the checkbox shows as checked
+      checkedSet.add(nodeId)
+      
       // Automatically add Browser role if not already in itemRoles
       if (!itemRoles.value.has(nodeId)) {
         // Get existing roles from permissionsMap or default to Browser

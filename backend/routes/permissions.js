@@ -24,7 +24,6 @@ function ntlmGet(url, domain, user, password) {
         console.error(`  NTLM GET Error: ${err.message}`);
         reject(err);
       } else {
-        console.log(`  NTLM GET Response: HTTP ${response.statusCode}`);
         if (response.statusCode === 200) {
           try {
             const data = JSON.parse(response.body);
@@ -45,10 +44,6 @@ function ntlmGet(url, domain, user, password) {
  */
 function ntlmPut(url, domain, user, password, body) {
   return new Promise((resolve, reject) => {
-    console.log(`  NTLM PUT - URL: ${url}`);
-    console.log(`  NTLM Auth - Domain: "${domain}", User: "${user}"`);
-    console.log(`  NTLM Body:`, JSON.stringify(body, null, 2));
-    
     httpntlm.put({
       url: url,
       username: user,
@@ -65,7 +60,6 @@ function ntlmPut(url, domain, user, password, body) {
         console.error(`  NTLM PUT Error: ${err.message}`);
         reject(err);
       } else {
-        console.log(`  NTLM PUT Response: HTTP ${response.statusCode}`);
         if (response.statusCode === 200 || response.statusCode === 201 || response.statusCode === 204) {
           resolve({ statusCode: response.statusCode, body: response.body });
         } else {
@@ -169,9 +163,7 @@ router.post('/check', async (req, res) => {
       });
     }
 
-    console.log('=== CHECK PERMISSIONS REQUEST ===');
-    console.log(`Server URI: ${serverUri}`);
-    console.log(`User Name: ${userName}`);
+    // Log permission check request (for production monitoring)
 
     // Get credentials from environment variables (SECURE!)
     const domain = process.env.PBI_DOMAIN;
@@ -192,6 +184,7 @@ router.post('/check', async (req, res) => {
       const catalogData = await ntlmGet(catalogEndpoint, domain, user, password);
       catalogItems = catalogData.value || [];
       console.log(`✓ Retrieved ${catalogItems.length} catalog items`);
+      
     } catch (error) {
       console.error('Failed to get catalog items:', error.message);
       return res.status(500).json({ 
@@ -210,8 +203,6 @@ router.post('/check', async (req, res) => {
       return itemPath && itemPath !== '/';
     });
 
-    console.log(`  Checking permissions for ${validItems.length} items in parallel batches...`);
-
     // Process items in parallel batches to avoid overwhelming the server
     const BATCH_SIZE = 20; // Process 20 items at a time
     const batches = [];
@@ -223,29 +214,63 @@ router.post('/check', async (req, res) => {
     // Process each batch in parallel
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-      console.log(`  Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} items)...`);
       
       // Create parallel requests for this batch
       const batchPromises = batch.map(async (item) => {
         const itemPath = item.Path;
         const itemType = item.Type; // 'Folder', 'PowerBIReport', 'Report', etc.
+        const itemName = item.Name || '';
 
         try {
-          const escapedPath = itemPath.replace(/'/g, "''");
-          const policyEndpoint = `${serverUri}/api/v2.0/CatalogItems(Path='${escapedPath}')/Policies`;
+          // For paths with Persian characters, we need to URL-encode the path
+          // Try using ID first (most reliable for Persian characters)
+          let policyEndpoint = null;
+          
+          if (item.Id && (itemType === 'PowerBIReport' || itemType === 'Report')) {
+            // Use ID-based endpoint for reports (handles Persian characters reliably)
+            policyEndpoint = `${serverUri}/api/v2.0/PowerBIReports(${item.Id})/Policies`;
+          }
+          
+          // Fallback to path-based endpoint if ID is not available
+          if (!policyEndpoint) {
+            const escapedPath = itemPath.replace(/'/g, "''");
+            // URL-encode the path parameter for OData queries with Persian characters
+            const encodedPath = encodeURIComponent(escapedPath);
+            // Use the encoded path in the OData query
+            policyEndpoint = `${serverUri}/api/v2.0/CatalogItems(Path='${encodedPath}')/Policies`;
+          }
           
           const policies = await ntlmGet(policyEndpoint, domain, user, password);
           
-          if (policies && policies.Policies) {
+          if (policies && policies.Policies && policies.Policies.length > 0) {
             // Check if user has access and collect roles
             const userRoles = [];
             let matchedPolicy = false;
+            
             policies.Policies.forEach(policy => {
               const policyUserName = (policy.GroupUserName || '').toLowerCase();
+              
+              // Extract username from domain\username format (e.g., "cinnagen\cheraghia" -> "cheraghia")
+              const policyUserNameOnly = policyUserName.includes('\\') 
+                ? policyUserName.split('\\').pop() 
+                : policyUserName;
+              const userNameOnly = userNameLower.includes('\\')
+                ? userNameLower.split('\\').pop()
+                : userNameLower;
+              
               // More flexible matching: check if username appears in policy or vice versa
-              const isMatch = policyUserName.includes(userNameLower) || 
+              // Try multiple matching strategies:
+              // 1. Exact match (case-insensitive)
+              // 2. Username only match (ignoring domain)
+              // 3. Contains match (either direction)
+              const isMatch = policyUserName === userNameLower ||
+                              policyUserNameOnly === userNameOnly ||
+                              policyUserName === userNameOnly ||
+                              userNameOnly === policyUserName ||
+                              policyUserName.includes(userNameLower) || 
                               userNameLower.includes(policyUserName) ||
-                              policyUserName === userNameLower;
+                              policyUserName.includes(userNameOnly) ||
+                              userNameOnly.includes(policyUserNameOnly);
               
               if (isMatch) {
                 matchedPolicy = true;
@@ -256,32 +281,75 @@ router.post('/check', async (req, res) => {
                       userRoles.push(role.Name);
                     }
                   });
-                } else {
-                  console.log(`  Policy matched but no roles array for: ${itemPath}`);
                 }
               }
             });
             
-            if (matchedPolicy && policies.Policies.length > 0) {
-              console.log(`  Item: ${itemPath} - Matched: ${matchedPolicy}, Roles: [${userRoles.join(', ') || 'NONE'}]`);
+            if (!matchedPolicy && policies.Policies.length > 0) {
+              const isPersianItem = /[\u0600-\u06FF]/.test(itemPath) || /[\u0600-\u06FF]/.test(itemName);
+              if (isPersianItem) {
+                console.warn(`  ⚠️  No policy match for "${itemPath}". Looking for user: "${userName}", found policies: ${policies.Policies.map(p => p.GroupUserName || 'N/A').join(', ')}`);
+              }
             }
 
             if (userRoles.length > 0) {
+              // For reports, the path might include the report name or might not
+              // Extract the actual folder path and report name separately
+              let folderPath = itemPath;
+              let reportName = item.Name || itemPath.split('/').pop();
+              
+              // If this is a report (not a folder), try to extract folder path
+              if (itemType !== 'Folder' && item.Name) {
+                // For reports, CatalogItems API Path might include the report name
+                // Handle both cases: "/folder/report" and "/report" (root folder)
+                const pathWithoutTrailingSlash = itemPath.replace(/\/$/, '');
+                const nameWithSlash = `/${item.Name}`;
+                
+                // Check if path ends with "/reportName" (most common case)
+                if (pathWithoutTrailingSlash.endsWith(nameWithSlash)) {
+                  // Extract folder path by removing "/reportName" from the end
+                  folderPath = pathWithoutTrailingSlash.substring(0, pathWithoutTrailingSlash.length - nameWithSlash.length) || '/';
+                } else if (pathWithoutTrailingSlash === item.Name) {
+                  // Path is exactly the report name without leading slash (root folder)
+                  // e.g., path = "سرمایه انسانی", name = "سرمایه انسانی"
+                  folderPath = '/';
+                } else if (itemPath === `/${item.Name}`) {
+                  // Path is exactly "/reportName" (root folder with leading slash)
+                  // e.g., path = "/سرمایه انسانی", name = "سرمایه انسانی"
+                  folderPath = '/';
+                } else {
+                  // Path doesn't end with name, assume path is just the folder path
+                  // This handles cases where CatalogItems returns folder path only
+                  folderPath = itemPath;
+                }
+              } else if (itemType === 'Folder') {
+                // For folders, the path is the folder path itself
+                folderPath = itemPath;
+              }
+              
               const resultObject = {
-                path: itemPath,
+                path: itemPath, // Full path from catalog
+                folderPath: folderPath, // Folder path only (for matching)
+                name: reportName, // Report/folder name
                 itemType: itemType === 'Folder' ? 'Folder' : 'Report',
-                name: item.Name || itemPath.split('/').pop(),
                 type: itemType,
-                roles: userRoles
+                roles: userRoles,
+                id: item.Id || null, // Include item ID for better matching
+                catalogType: itemType
               };
-              console.log(`✓ Found access for "${itemPath}": roles = [${userRoles.join(', ')}]`);
+              // Log successful permission check (keep for production monitoring)
+              console.log(`✓ Found access for "${itemPath}" (ID: ${item.Id || 'N/A'}): roles = [${userRoles.join(', ')}]`);
               return resultObject;
-            } else {
-              console.log(`  No roles found for "${itemPath}"`);
             }
           }
           return null;
         } catch (error) {
+          // Log errors for Persian items to help debug
+          const isPersianItem = /[\u0600-\u06FF]/.test(itemPath) || /[\u0600-\u06FF]/.test(itemName || '');
+          if (isPersianItem) {
+            console.error(`  ❌ ERROR checking permissions for "${itemPath}":`, error.message);
+            console.error(`     Stack:`, error.stack);
+          }
           // Silently skip items we can't get policies for
           return null;
         }
@@ -331,12 +399,7 @@ router.post('/set', async (req, res) => {
       itemType 
     } = req.body;
 
-    console.log('=== SET PERMISSIONS REQUEST ===');
-    console.log(`Item ID: ${itemId}`);
-    console.log(`Item Path: ${itemPath}`);
-    console.log(`Target User: ${userName}`);
-    console.log(`Roles: ${roles.join(', ')}`);
-    console.log(`Item Type: ${itemType}`);
+    // Log permission set request (for production monitoring)
 
     if (!serverUri || !userName || !roles) {
       return res.status(400).json({ 
@@ -355,7 +418,6 @@ router.post('/set', async (req, res) => {
       });
     }
 
-    console.log(`Using auth credentials - Domain: ${domain}, User: ${user}`);
 
     // Role definitions
     const roleDefinitions = {
@@ -401,7 +463,6 @@ router.post('/set', async (req, res) => {
     for (const endpoint of getEndpoints) {
       try {
         existingPolicies = await ntlmGet(endpoint, domain, user, password);
-        console.log(`✓ Retrieved existing policies from: ${endpoint}`);
         break;
       } catch (error) {
         console.log(`  Failed to get from: ${endpoint} - ${error.message}`);
@@ -414,12 +475,7 @@ router.post('/set', async (req, res) => {
     let userExists = false;
     const isRemovalRequest = roles.length === 0; // Empty roles array = remove permissions
 
-    if (isRemovalRequest) {
-      console.log(`  🗑️  REMOVAL REQUEST: Removing all permissions for "${userName}"`);
-    }
-
     if (existingPolicies && existingPolicies.Policies) {
-      console.log(`  Found ${existingPolicies.Policies.length} existing policies`);
       existingPolicies.Policies.forEach(policy => {
         const policyUserName = policy.GroupUserName.toLowerCase();
         const inputUserName = userName.toLowerCase();
@@ -429,7 +485,6 @@ router.post('/set', async (req, res) => {
           
           if (isRemovalRequest) {
             // REMOVE: Don't add this user to the policies array
-            console.log(`  ✓ Removing user "${policy.GroupUserName}" from policies`);
             // Simply don't push this policy - effectively removing the user
             return;
           } else {
@@ -437,7 +492,6 @@ router.post('/set', async (req, res) => {
             const roleObjects = roles.map(roleName => roleDefinitions[roleName]).filter(r => r);
             
             if (roleObjects.length === 0) {
-              console.log(`  ⚠️  No valid roles provided - skipping user update`);
               return;
             }
 
@@ -445,7 +499,6 @@ router.post('/set', async (req, res) => {
               GroupUserName: policy.GroupUserName,
               Roles: roleObjects
             });
-            console.log(`  Updated user "${policy.GroupUserName}" - REPLACED roles with: ${roles.join(', ')}`);
           }
         } else {
           // Keep other users as-is
@@ -465,17 +518,8 @@ router.post('/set', async (req, res) => {
           GroupUserName: userName,
           Roles: roleObjects
         });
-        console.log(`  Adding new user "${userName}" with roles: ${roles.join(', ')}`);
       }
-    } else if (!userExists && isRemovalRequest) {
-      console.log(`  ⚠️  User "${userName}" not found in existing policies - nothing to remove`);
     }
-
-    if (isRemovalRequest && userExists) {
-      console.log(`  ✓ User will be removed. New policy count: ${policies.length}`);
-    }
-
-    console.log(`  Total policies to send: ${policies.length}`);
 
     // Set policies using NTLM
     const requestBody = { Policies: policies };
@@ -485,9 +529,8 @@ router.post('/set', async (req, res) => {
 
     for (const endpoint of setEndpoints) {
       try {
-        console.log(`  Attempting to set policies at: ${endpoint}`);
         await ntlmPut(endpoint, domain, user, password, requestBody);
-        console.log(`✓ Successfully set permissions at: ${endpoint}`);
+        // Successfully set permissions
         success = true;
         break;
       } catch (error) {
