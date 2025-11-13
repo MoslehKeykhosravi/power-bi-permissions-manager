@@ -6,13 +6,18 @@
         <span 
           v-if="hasChildren" 
           class="expand-icon"
+          :class="{ 'expanded': isExpanded }"
           @click.stop="$emit('toggle-expand', nodeId)"
         >
-          <svg v-if="isExpanded" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 5L6 8L9 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Up arrow when expanded (blue circle and arrow) -->
+          <svg v-if="isExpanded" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="7" fill="none" stroke="#2196f3" stroke-width="1"/>
+            <path d="M5 9L8 6L11 9" stroke="#2196f3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           </svg>
-          <svg v-else width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 7L6 4L9 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Down arrow when collapsed (gray circle and arrow) -->
+          <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="7" fill="none" stroke="#6b7280" stroke-width="1"/>
+            <path d="M5 7L8 10L11 7" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           </svg>
         </span>
         <span v-else class="expand-spacer"></span>
@@ -381,13 +386,40 @@ const getRoleText = (role) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-color);
-  opacity: 0.7;
-  transition: opacity 0.2s ease;
+  transition: all 0.2s ease;
+  background: transparent;
 }
 
-.expand-icon:hover {
-  opacity: 1;
+.expand-icon:not(.expanded):hover svg circle {
+  stroke: #4b5563;
+}
+
+.expand-icon:not(.expanded):hover svg path {
+  stroke: #4b5563;
+}
+
+.dark-mode .expand-icon:not(.expanded) svg circle {
+  stroke: #9ca3af;
+}
+
+.dark-mode .expand-icon:not(.expanded) svg path {
+  stroke: #9ca3af;
+}
+
+.dark-mode .expand-icon:not(.expanded):hover svg circle {
+  stroke: #d1d5db;
+}
+
+.dark-mode .expand-icon:not(.expanded):hover svg path {
+  stroke: #d1d5db;
+}
+
+.dark-mode .expand-icon.expanded svg circle {
+  stroke: #64b5f6;
+}
+
+.dark-mode .expand-icon.expanded svg path {
+  stroke: #64b5f6;
 }
 
 .expand-spacer {
