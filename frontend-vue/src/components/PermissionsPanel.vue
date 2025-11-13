@@ -136,7 +136,7 @@
         <button
           class="apply-btn-minimal"
           @click="handleApplyPermissions"
-          :disabled="loading || selectedItems.length === 0 || selectedAdUsers.length === 0 || !hasActualChanges"
+          :disabled="loading || (selectedItems.length === 0 && props.markedForRemovalItems.length === 0) || selectedAdUsers.length === 0 || !hasActualChanges"
         >
           <span v-if="loading" class="spinner-small"></span>
           <span v-else>{{ t('applyPermissions') }}</span>
@@ -603,6 +603,26 @@ watch(() => props.newItems, (newItems) => {
 }, { deep: true })
 
 // Also watch selectedItems to auto-select Browser when new items are first selected
+// Watch button disabled state for debugging
+watch([() => hasActualChanges.value, () => props.selectedItems.length, () => selectedAdUsers.value.length, () => loading.value], 
+  ([hasChanges, itemsCount, usersCount, isLoading]) => {
+    const isDisabled = isLoading || itemsCount === 0 || usersCount === 0 || !hasChanges
+    console.log('🔘 [Apply Button State]', {
+      disabled: isDisabled,
+      reasons: {
+        loading: isLoading,
+        noItems: itemsCount === 0,
+        noUsers: usersCount === 0,
+        noChanges: !hasChanges
+      },
+      hasActualChanges: hasChanges,
+      selectedItemsCount: itemsCount,
+      selectedUsersCount: usersCount
+    })
+  },
+  { immediate: true }
+)
+
 watch(() => props.selectedItems, (selectedItems) => {
   // Check if there are any new items (not in original permissions)
   const hasNewItems = selectedItems.some(item => {
@@ -900,35 +920,144 @@ const originalPermissionsMap = computed(() => {
 
 // Check if there are actual changes (not just itemRoles entries, but actual differences)
 const hasActualRoleChanges = computed(() => {
-  if (!props.itemRoles || props.itemRoles.size === 0) {
-    return false
+  const originalMap = originalPermissionsMap.value
+  
+  console.log('🔍 [hasActualRoleChanges] Computing...', {
+    originalMapSize: originalMap.size,
+    itemRolesSize: props.itemRoles?.size || 0,
+    selectedItemsCount: props.selectedItems?.length || 0,
+    markedForRemovalCount: props.markedForRemovalItems?.length || 0,
+    newItemsCount: props.newItems?.length || 0
+  })
+  
+  // If there are no original permissions, check if there are any itemRoles (new permissions)
+  if (originalMap.size === 0) {
+    const result = props.itemRoles && props.itemRoles.size > 0
+    console.log('🔍 [hasActualRoleChanges] No original permissions, checking itemRoles:', result)
+    return result
   }
   
-  const originalMap = originalPermissionsMap.value
+  // If there are no itemRoles, check if there are items in originalMap that should be tracked
+  // (this handles the case where items were removed from itemRoles but still have original permissions)
+  if (!props.itemRoles || props.itemRoles.size === 0) {
+    // Check if any items in originalPermissionsMap are in selectedItems but not in itemRoles
+    // This indicates items that originally had permissions but are now being removed
+    if (props.selectedItems && props.selectedItems.length > 0) {
+      for (const item of props.selectedItems) {
+        const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
+        if (originalMap.has(nodeId) && (!props.itemRoles || !props.itemRoles.has(nodeId))) {
+          // This item originally had permissions but is no longer in itemRoles
+          // This is a removal, so there's a change
+          console.log('✅ [hasActualRoleChanges] Found removal: item in originalMap but not in itemRoles', {
+            nodeId,
+            itemName: item.name || item.path
+          })
+          return true
+        }
+      }
+    }
+    console.log('🔍 [hasActualRoleChanges] No itemRoles, no removals found')
+    return false
+  }
   
   // Check each item in itemRoles to see if it's different from original
   for (const [nodeId, currentRoles] of props.itemRoles.entries()) {
     const originalRoles = originalMap.get(nodeId) || []
     
     // Normalize roles arrays for comparison (sort and compare)
-    const normalizeRoles = (roles) => [...roles].sort().join(',')
+    const normalizeRoles = (roles) => {
+      if (!roles || !Array.isArray(roles) || roles.length === 0) return ''
+      return [...roles].sort().join(',')
+    }
     const currentRolesStr = normalizeRoles(currentRoles)
     const originalRolesStr = normalizeRoles(originalRoles)
     
     // If roles are different, there's an actual change
+    // This includes: empty array vs non-empty (removal), different roles (modification)
     if (currentRolesStr !== originalRolesStr) {
+      console.log('✅ [hasActualRoleChanges] Found role change:', {
+        nodeId,
+        originalRoles: originalRolesStr || '(empty)',
+        currentRoles: currentRolesStr || '(empty)',
+        isRemoval: currentRolesStr === '' && originalRolesStr !== ''
+      })
       return true
     }
   }
   
+  // Also check if there are items in originalMap that are not in itemRoles
+  // This handles the case where an item originally had permissions but was removed from itemRoles
+  for (const [nodeId, originalRoles] of originalMap.entries()) {
+    if (originalRoles && originalRoles.length > 0) {
+      // If this item had original permissions but is not in itemRoles, it's a removal
+      if (!props.itemRoles.has(nodeId)) {
+        // Check if this item is in selectedItems (meaning it's still selected but roles were removed)
+        const itemExists = props.selectedItems && props.selectedItems.some(item => {
+          const itemNodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
+          return itemNodeId === nodeId
+        })
+        if (itemExists) {
+          // Item is selected but not in itemRoles - this means all roles were removed
+          console.log('✅ [hasActualRoleChanges] Found removal: item in originalMap and selectedItems but not in itemRoles', {
+            nodeId,
+            originalRoles: originalRoles.join(',')
+          })
+          return true
+        }
+      }
+    }
+  }
+  
+  // IMPORTANT: Also check items in markedForRemovalItems that originally had permissions
+  // This handles the case where items are marked for removal (all roles deselected)
+  // but might have been removed from itemRoles entirely
+  if (props.markedForRemovalItems && props.markedForRemovalItems.length > 0) {
+    for (const item of props.markedForRemovalItems) {
+      const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
+      if (originalMap.has(nodeId)) {
+        const originalRoles = originalMap.get(nodeId) || []
+        if (originalRoles && originalRoles.length > 0) {
+          // This item originally had permissions and is now marked for removal
+          // Check if it's in itemRoles with empty array, or not in itemRoles at all
+          const currentRoles = props.itemRoles?.get(nodeId)
+          if (!currentRoles || currentRoles.length === 0) {
+            // Item is marked for removal and has no roles (or empty array) - this is a change
+            console.log('✅ [hasActualRoleChanges] Found removal: item in markedForRemovalItems with original permissions', {
+              nodeId,
+              itemName: item.name || item.path,
+              originalRoles: originalRoles.join(','),
+              currentRoles: currentRoles?.length === 0 ? '(empty)' : '(not in itemRoles)'
+            })
+            return true
+          }
+        }
+      }
+    }
+  }
+  
+  console.log('❌ [hasActualRoleChanges] No changes detected')
   return false
 })
 
 // Check if there are any actual changes (new items, removals, or role changes)
 const hasActualChanges = computed(() => {
-  return props.newItems.length > 0 || 
-         props.markedForRemovalItems.length > 0 || 
-         hasActualRoleChanges.value
+  const hasNewItems = props.newItems.length > 0
+  const hasRemovals = props.markedForRemovalItems.length > 0
+  const hasRoleChanges = hasActualRoleChanges.value
+  
+  const result = hasNewItems || hasRemovals || hasRoleChanges
+  
+  console.log('📊 [hasActualChanges] Final check:', {
+    hasNewItems,
+    hasRemovals,
+    hasRoleChanges,
+    result,
+    newItemsCount: props.newItems.length,
+    markedForRemovalCount: props.markedForRemovalItems.length,
+    buttonEnabled: result && props.selectedItems.length > 0 && props.selectedAdUsers.length > 0
+  })
+  
+  return result
 })
 
 const reportCount = computed(() => {
@@ -1345,6 +1474,7 @@ const handleApplyPermissions = async () => {
       }
       
       // Find the item that matches this nodeId
+      // First try selectedItems
       let item = props.selectedItems.find(selectedItem => {
         if (nodeId.startsWith('report_')) {
           const reportId = nodeId.replace('report_', '')
@@ -1356,55 +1486,411 @@ const handleApplyPermissions = async () => {
         return false
       })
       
-      // If not found in selectedItems, check if it's in originalPermissions
-      // In that case, we need to construct the item from the nodeId
-      if (!item && props.originalPermissionIds && props.originalPermissionIds.length > 0) {
-        const isInOriginal = props.originalPermissionIds.some(originalId => originalId === nodeId)
-        if (isInOriginal) {
-          // Construct item from nodeId
-          if (nodeId.startsWith('report_')) {
-            const reportId = nodeId.replace('report_', '')
-            // Find report from reports list
+      // If not found in selectedItems, try to find it from reports list
+      if (!item) {
+        if (nodeId.startsWith('report_')) {
+          const reportId = nodeId.replace('report_', '')
+          // Find report from reports list
+          const report = props.reports.find(r => r.id === reportId)
+          if (report) {
+            item = report
+          }
+        }
+      }
+      
+      // If still not found, try to find it from permissionsData (for mutual permissions items)
+      // This is CRITICAL for items from mutual permissions that might not be in selectedItems
+      if (!item && props.permissionsData && props.permissionsData.length > 0) {
+        // Normalize path function for Unicode/Persian character handling
+        const normalizePath = (p) => {
+          if (!p) return ''
+          // Decode URL encoding if present (important for Persian characters)
+          try {
+            p = decodeURIComponent(p)
+          } catch (e) {
+            // If decoding fails, use original
+          }
+          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+        }
+        
+        if (nodeId.startsWith('report_')) {
+          const reportId = nodeId.replace('report_', '')
+          // Find permission from permissionsData - try by ID first (most reliable)
+          let permission = props.permissionsData.find(p => p.id === reportId && p.itemType === 'Report')
+          
+          // If not found by ID, try by path matching with normalization (for Persian names)
+          // This is important for items that are NOT in mutual permissions but are in one user's permissions
+          if (!permission) {
+            // Try to find report from reports list to get the correct path
             const report = props.reports.find(r => r.id === reportId)
             if (report) {
-              item = report
+              const reportPath = report.path || report.fullPath || ''
+              const reportName = report.name || ''
+              const reportFullPath = report.fullPath || (report.path === '/' ? `/${report.name}` : report.path === '' ? `/${report.name}` : `${report.path}/${report.name}`)
+              
+              const normalizedReportPath = normalizePath(reportPath)
+              const normalizedReportFullPath = normalizePath(reportFullPath)
+              
+              console.log(`🔍 [Apply Permissions] Trying to find permission by path matching (for Persian names):`, {
+                reportId,
+                reportName,
+                reportPath,
+                reportFullPath,
+                normalizedReportFullPath,
+                permissionsDataCount: props.permissionsData.length
+              })
+              
+              // Find permission by matching normalized paths
+              permission = props.permissionsData.find(p => {
+                if (p.itemType !== 'Report') return false
+                const permPath = p.path || p.fullPath || ''
+                const permFullPath = p.fullPath || p.path || ''
+                const normalizedPermPath = normalizePath(permPath)
+                const normalizedPermFullPath = normalizePath(permFullPath)
+                
+                // Match by full path or path + name (with normalization for Persian characters)
+                const match = normalizedPermFullPath === normalizedReportFullPath || 
+                       normalizedPermPath === normalizedReportPath ||
+                       (p.name && normalizePath(p.name) === normalizePath(reportName))
+                
+                if (match) {
+                  console.log(`✅ [Apply Permissions] Found permission by path matching:`, {
+                    permissionId: p.id,
+                    permissionName: p.name,
+                    permissionPath: permPath,
+                    permissionFullPath: permFullPath,
+                    normalizedPermissionFullPath: normalizedPermFullPath
+                  })
+                }
+                
+                return match
+              })
             }
-          } else if (nodeId.startsWith('folder_')) {
-            const folderPath = nodeId.replace('folder_', '')
+          }
+          
+          // If still not found, log a warning with details for debugging Persian name issues
+          if (!permission) {
+            console.warn(`⚠ [Apply Permissions] Could not find permission in permissionsData for report:`, {
+              reportId,
+              permissionsDataCount: props.permissionsData.length,
+              samplePermissions: props.permissionsData.filter(p => p.itemType === 'Report').slice(0, 5).map(p => ({
+                id: p.id,
+                name: p.name,
+                path: p.path || p.fullPath,
+                normalizedPath: normalizePath(p.path || p.fullPath)
+              }))
+            })
+          }
+          
+          if (permission) {
+            console.log(`✅ [Apply Permissions] Found item from permissionsData (mutual permissions):`, {
+              nodeId,
+              reportId,
+              permissionName: permission.name,
+              permissionPath: permission.path || permission.fullPath,
+              foundBy: permission.id === reportId ? 'ID' : 'Path matching'
+            })
+            // Construct item from permission data
+            item = {
+              id: permission.id,
+              name: permission.name,
+              path: permission.path || permission.fullPath,
+              fullPath: permission.fullPath || permission.path,
+              type: 'Report',
+              itemType: 'Report'
+            }
+          } else {
+            console.warn(`⚠ [Apply Permissions] Could not find report in permissionsData:`, {
+              nodeId,
+              reportId,
+              permissionsDataCount: props.permissionsData.length,
+              samplePermissions: props.permissionsData.slice(0, 3).map(p => ({
+                id: p.id,
+                name: p.name,
+                path: p.path || p.fullPath,
+                itemType: p.itemType
+              }))
+            })
+          }
+        } else if (nodeId.startsWith('folder_')) {
+          const folderPath = nodeId.replace('folder_', '')
+          const normalizedFolderPath = normalizePath(folderPath)
+          
+          // Find permission from permissionsData with path normalization (critical for Persian names)
+          const permission = props.permissionsData.find(p => {
+            if (p.itemType !== 'Folder') return false
+            const permPath = p.path || p.fullPath || ''
+            const permFullPath = p.fullPath || p.path || ''
+            const normalizedPermPath = normalizePath(permPath)
+            const normalizedPermFullPath = normalizePath(permFullPath)
+            
+            // Match with normalized paths (handles URL encoding differences for Persian characters)
+            return normalizedPermPath === normalizedFolderPath || 
+                   normalizedPermFullPath === normalizedFolderPath ||
+                   permPath === folderPath || 
+                   permFullPath === folderPath
+          })
+          
+          if (permission) {
+            console.log(`✅ [Apply Permissions] Found folder from permissionsData (mutual permissions):`, {
+              nodeId,
+              folderPath,
+              normalizedFolderPath,
+              permissionName: permission.name,
+              permissionPath: permission.path || permission.fullPath,
+              normalizedPermissionPath: normalizePath(permission.path || permission.fullPath)
+            })
+            item = {
+              type: 'Folder',
+              path: permission.path || permission.fullPath,
+              name: permission.name || folderPath.split('/').pop(),
+              itemType: 'Folder'
+            }
+          } else {
+            console.warn(`⚠ [Apply Permissions] Could not find folder in permissionsData:`, {
+              nodeId,
+              folderPath,
+              normalizedFolderPath,
+              permissionsDataCount: props.permissionsData.length,
+              samplePermissions: props.permissionsData.filter(p => p.itemType === 'Folder').slice(0, 3).map(p => ({
+                name: p.name,
+                path: p.path || p.fullPath,
+                normalizedPath: normalizePath(p.path || p.fullPath)
+              }))
+            })
+            // Fallback: construct from nodeId if not found in permissionsData
             item = {
               type: 'Folder',
               path: folderPath,
-              name: folderPath.split('/').pop()
+              name: folderPath.split('/').pop(),
+              itemType: 'Folder'
             }
           }
         }
       }
       
-      // Only include items where roles have actually changed
+      // Last resort: construct from nodeId or reports list if still not found
+      // This is important for items NOT in mutual permissions (like Persian-named items)
+      if (!item) {
+        if (nodeId.startsWith('report_')) {
+          const reportId = nodeId.replace('report_', '')
+          // Try to find from reports list one more time
+          const report = props.reports.find(r => r.id === reportId)
+          if (report) {
+            console.log(`✅ [Apply Permissions] Found item from reports list (fallback for non-mutual items):`, {
+              nodeId,
+              reportId,
+              reportName: report.name,
+              reportPath: report.path || report.fullPath
+            })
+            item = report
+          } else {
+            console.warn(`⚠ [Apply Permissions] Could not find report anywhere for nodeId: ${nodeId}`, {
+              reportId,
+              reportsCount: props.reports.length,
+              permissionsDataCount: props.permissionsData ? props.permissionsData.length : 0
+            })
+          }
+        } else if (nodeId.startsWith('folder_')) {
+          const folderPath = nodeId.replace('folder_', '')
+          item = {
+            type: 'Folder',
+            path: folderPath,
+            name: folderPath.split('/').pop(),
+            itemType: 'Folder'
+          }
+        }
+      }
+      
+      // Only process if we found the item
       if (item) {
         const originalRoles = originalMap.get(nodeId) || []
+        const hasOriginalPermissions = originalMap.has(nodeId)
         
         // Check if all roles are being removed (empty roles array)
         if (!roles || roles.length === 0) {
           // This is removing all roles - treat as removal, not role update
-          itemsRemovingAllRoles.push(item)
+          // Only if it originally had permissions
+          if (hasOriginalPermissions) {
+            itemsRemovingAllRoles.push(item)
+          }
         } else {
           // Normalize roles arrays for comparison
           const normalizeRoles = (roles) => [...roles].sort().join(',')
           const currentRolesStr = normalizeRoles(roles || [])
           const originalRolesStr = normalizeRoles(originalRoles)
           
-          // Only add if roles are different
+          console.log(`🔍 [Apply Permissions] Processing item from itemRoles:`, {
+            nodeId,
+            itemName: item.name || item.path,
+            currentRoles: roles,
+            originalRoles: originalRoles,
+            currentRolesStr,
+            originalRolesStr,
+            isDifferent: currentRolesStr !== originalRolesStr,
+            hasOriginalPermissions,
+            isMultipleUsers: userNames.length > 1
+          })
+          
+          // IMPORTANT: If item is NOT in originalPermissionsMap (not in mutual permissions),
+          // it means some users don't have it yet. We need to:
+          // 1. Add it to itemsWithRoleChanges for users who already have it (to update their roles)
+          // 2. The API call will handle adding it for users who don't have it (the set endpoint works for both add and update)
+          // So we always add to itemsWithRoleChanges if roles are different, regardless of hasOriginalPermissions
+          // 
+          // CRITICAL: For items NOT in mutual permissions (hasOriginalPermissions = false):
+          // - originalRoles will be [] (empty array)
+          // - If user has added role tags, currentRoles will have values
+          // - So currentRolesStr !== originalRolesStr will be true (e.g., "Browser,Content Manager" !== "")
+          // - This ensures items with role tags are always processed and applied to ALL users
           if (currentRolesStr !== originalRolesStr) {
+            console.log(`✅ [Apply Permissions] Adding item to itemsWithRoleChanges (roles differ):`, {
+              itemName: item.name || item.path,
+              currentRoles: roles,
+              originalRoles: originalRoles,
+              hasOriginalPermissions,
+              note: hasOriginalPermissions 
+                ? 'Item in mutual permissions - will update all users' 
+                : 'Item NOT in mutual permissions - will ADD for users without it, UPDATE for users with it'
+            })
             itemsWithRoleChanges.push({
               item,
               roles: roles || [] // Ensure it's an array
             })
+          } else {
+            // If roles match original, but item is NOT in mutual permissions and has role tags,
+            // we should still add it to ensure it's applied to users who don't have it
+            if (!hasOriginalPermissions && roles && roles.length > 0) {
+              console.log(`✅ [Apply Permissions] Adding item to itemsWithRoleChanges (not in mutual, has role tags):`, {
+                itemName: item.name || item.path,
+                currentRoles: roles,
+                originalRoles: originalRoles,
+                note: 'Item NOT in mutual permissions but has role tags - will ADD for users without it'
+              })
+              itemsWithRoleChanges.push({
+                item,
+                roles: roles || []
+              })
+            } else {
+              console.log(`ℹ️ [Apply Permissions] Skipping item (roles match original):`, {
+                itemName: item.name || item.path,
+                roles: roles,
+                originalRoles: originalRoles
+              })
+            }
           }
         }
+      } else {
+        // Log warning if item with role tags couldn't be found
+        console.warn(`⚠ [Apply Permissions] Could not find item for nodeId with roles: ${nodeId}`, {
+          roles,
+          selectedItemsCount: props.selectedItems.length,
+          reportsCount: props.reports.length,
+          permissionsDataCount: props.permissionsData ? props.permissionsData.length : 0,
+          itemRolesKeys: Array.from(props.itemRoles.keys())
+        })
       }
     })
   }
+
+  // IMPORTANT: Also check selectedItems that have role tags but weren't detected as changes
+  // This handles cases where items are selected with role tags but might not be in itemRoles
+  // or where the comparison logic missed them
+  if (props.selectedItems && props.selectedItems.length > 0 && props.itemRoles && props.itemRoles.size > 0) {
+    props.selectedItems.forEach(selectedItem => {
+      // Skip if already processed
+      const nodeId = selectedItem.id ? `report_${selectedItem.id}` : `folder_${selectedItem.path}`
+      
+      // Skip if already in itemsWithRoleChanges or marked for removal
+      const alreadyProcessed = itemsWithRoleChanges.some(({ item }) => 
+        (item.id && selectedItem.id && item.id === selectedItem.id) ||
+        (item.path && selectedItem.path && item.path === selectedItem.path)
+      )
+      if (alreadyProcessed || markedForRemovalNodeIds.has(nodeId)) {
+        return
+      }
+      
+      // Check if this item has role tags in itemRoles
+      if (props.itemRoles.has(nodeId)) {
+        const roles = props.itemRoles.get(nodeId)
+        const originalRoles = originalPermissionsMap.value.get(nodeId) || []
+        
+        // Only add if roles are different and not empty
+        if (roles && roles.length > 0) {
+          const normalizeRoles = (roles) => [...roles].sort().join(',')
+          const currentRolesStr = normalizeRoles(roles)
+          const originalRolesStr = normalizeRoles(originalRoles)
+          
+          console.log('🔍 [Apply Permissions] Checking selectedItem with role tags:', {
+            nodeId,
+            itemName: selectedItem.name || selectedItem.path,
+            currentRoles: roles,
+            originalRoles: originalRoles,
+            currentRolesStr,
+            originalRolesStr,
+            isDifferent: currentRolesStr !== originalRolesStr,
+            alreadyProcessed,
+            hasOriginalPermissions: originalPermissionsMap.value.has(nodeId)
+          })
+          
+          // IMPORTANT: Always add if roles are different OR if item is in selectedItems with role tags
+          // This ensures that when user modifies role tags on a selected item, it gets applied to all users
+          // even if the comparison logic might have missed it
+          if (currentRolesStr !== originalRolesStr) {
+            // Check if not already in itemsWithRoleChanges
+            const exists = itemsWithRoleChanges.some(({ item }) => 
+              (item.id && selectedItem.id && item.id === selectedItem.id) ||
+              (item.path && selectedItem.path && item.path === selectedItem.path)
+            )
+            if (!exists) {
+              console.log('✅ [Apply Permissions] Adding selectedItem to itemsWithRoleChanges:', {
+                itemName: selectedItem.name || selectedItem.path,
+                roles,
+                reason: 'Roles differ from original'
+              })
+              itemsWithRoleChanges.push({
+                item: selectedItem,
+                roles: roles
+              })
+            } else {
+              console.log('⚠️ [Apply Permissions] selectedItem already in itemsWithRoleChanges:', {
+                itemName: selectedItem.name || selectedItem.path
+              })
+            }
+          } else {
+            console.log('ℹ️ [Apply Permissions] selectedItem roles match original, skipping:', {
+              itemName: selectedItem.name || selectedItem.path,
+              roles: roles,
+              originalRoles: originalRoles
+            })
+          }
+        } else {
+          console.log('⚠️ [Apply Permissions] selectedItem has empty roles, skipping:', {
+            itemName: selectedItem.name || selectedItem.path,
+            nodeId
+          })
+        }
+      } else {
+        console.log('ℹ️ [Apply Permissions] selectedItem does not have role tags in itemRoles:', {
+          itemName: selectedItem.name || selectedItem.path,
+          nodeId,
+          itemRolesKeys: Array.from(props.itemRoles.keys())
+        })
+      }
+    })
+  }
+  
+  // Log final state before applying
+  console.log('📊 [Apply Permissions] Final state before applying:', {
+    itemsWithRoleChangesCount: itemsWithRoleChanges.length,
+    newItemsCount: props.newItems.length,
+    allRemovalItemsCount: allRemovalItems.length,
+    userNames: userNames,
+    itemsWithRoleChanges: itemsWithRoleChanges.map(({ item, roles }) => ({
+      itemName: item.name || item.path,
+      roles
+    }))
+  })
 
   // Combine all removal items (marked for removal + items with all roles removed)
   // Remove duplicates by comparing item IDs/paths
@@ -1509,34 +1995,75 @@ const handleApplyPermissions = async () => {
   try {
     // Apply role updates to items with role changes
     if (itemsWithRoleChanges.length > 0) {
+      console.log(`🔄 [Apply Permissions] Applying role changes to ${itemsWithRoleChanges.length} item(s) for ${userNames.length} user(s)`)
       for (const user of userNames) {
+        console.log(`👤 [Apply Permissions] Processing user: ${user}`)
         for (const { item, roles } of itemsWithRoleChanges) {
           try {
             const itemType = item.type === 'Folder' ? 'Folder' : 'Report'
 
+            const itemPath = item.path || item.fullPath
+            const itemName = item.name || itemPath
+            
+            console.log(`  📝 [Apply Permissions] Applying roles to ${itemName}:`, {
+              user,
+              itemType,
+              roles,
+              itemId: item.id,
+              itemPath: itemPath,
+              itemName: itemName,
+              note: 'This will ADD permissions for users without access, or UPDATE for users with access'
+            })
+
             // If roles array is empty, it means remove all roles
             // Otherwise, apply the updated roles
-            const response = await axios.post('/api/permissions/set', {
+            // NOTE: The /api/permissions/set endpoint handles both:
+            // 1. Adding new permissions (if user doesn't have access)
+            // 2. Updating existing permissions (if user already has access)
+            // So we can use the same call for all users, regardless of whether they have the item or not
+            const requestPayload = {
               serverUri: props.connectionInfo.serverUri,
               itemId: item.id,
-              itemPath: item.path || item.fullPath,
+              itemPath: itemPath,
               userName: user,
               roles: roles.length === 0 ? [] : roles, // Empty array means remove all permissions
               itemType: itemType
+            }
+            
+            console.log(`  📤 [Apply Permissions] Sending API request:`, {
+              user,
+              itemName: itemName,
+              itemId: item.id,
+              itemPath: itemPath,
+              roles: roles,
+              itemType: itemType,
+              payload: requestPayload
             })
+            
+            const response = await axios.post('/api/permissions/set', requestPayload)
 
             if (response.data.success) {
               successCount++
+              console.log(`  ✅ [Apply Permissions] Success: ${user} → ${itemName}`, {
+                response: response.data
+              })
             } else {
               failCount++
-              errors.push(`${user} → ${item.name}: Failed to update roles`)
+              const errorMsg = response.data.error || response.data.message || 'Unknown error'
+              errors.push(`${user} → ${itemName}: ${errorMsg}`)
+              console.error(`  ❌ [Apply Permissions] Failed: ${user} → ${itemName}`, {
+                error: errorMsg,
+                response: response.data
+              })
             }
           } catch (err) {
             failCount++
             errors.push(`${user} → ${item.name}: ${err.message}`)
+            console.error(`  ❌ [Apply Permissions] Error: ${user} → ${item.name || item.path}:`, err.message)
           }
         }
       }
+      console.log(`✅ [Apply Permissions] Completed role changes: ${successCount} success, ${failCount} failed`)
     }
 
     // ONLY apply permissions to NEW items (not items that already have permissions)
@@ -1643,6 +2170,77 @@ const handleApplyPermissions = async () => {
         setTimeout(async () => {
           await handleCheckPermissions()
         }, 1000) // Wait 1 second for server to propagate changes
+      } else {
+        // For multiple users, manually update permissionsData to reflect newly applied permissions
+        // This ensures change detection works for subsequent operations
+        if (props.onCheckPermissions) {
+          const existingPermissionsMap = new Map()
+          
+          // Build map of existing permissions
+          if (props.permissionsData && props.permissionsData.length > 0) {
+            props.permissionsData.forEach(p => {
+              const key = p.id || `${p.itemType}_${p.path || p.fullPath || ''}`
+              existingPermissionsMap.set(key, p)
+            })
+          }
+          
+          // Update permissions for items that were modified
+          itemsWithRoleChanges.forEach(({ item, roles }) => {
+            const key = item.id || `${item.type}_${item.path || item.fullPath || ''}`
+            
+            // Create or update permission entry
+            const permission = {
+              id: item.id || null,
+              path: item.path || item.fullPath || item.path,
+              folderPath: item.type === 'Folder' ? (item.path || '/') : (item.path || '/'),
+              name: item.name,
+              itemType: item.type === 'Folder' ? 'Folder' : 'Report',
+              type: item.type,
+              roles: roles.length > 0 ? roles : [],
+              catalogType: item.type
+            }
+            
+            existingPermissionsMap.set(key, permission)
+          })
+          
+          // Add permissions for newly added items
+          props.newItems.forEach(item => {
+            const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
+            const key = item.id || `${item.type}_${item.path || item.fullPath || ''}`
+            
+            // Get roles from itemRoles or selectedRoles
+            let roles = ['Browser']
+            if (props.itemRoles && props.itemRoles.has(nodeId)) {
+              roles = props.itemRoles.get(nodeId)
+            } else if (selectedRoles.value.length > 0) {
+              roles = selectedRoles.value
+            }
+            
+            // Create or update permission entry
+            const permission = {
+              id: item.id || null,
+              path: item.path || item.fullPath || item.path,
+              folderPath: item.type === 'Folder' ? (item.path || '/') : (item.path || '/'),
+              name: item.name,
+              itemType: item.type === 'Folder' ? 'Folder' : 'Report',
+              type: item.type,
+              roles: roles,
+              catalogType: item.type
+            }
+            
+            existingPermissionsMap.set(key, permission)
+          })
+          
+          // Remove permissions for items that were removed
+          allRemovalItems.forEach(item => {
+            const key = item.id || `${item.type}_${item.path || item.fullPath || ''}`
+            existingPermissionsMap.delete(key)
+          })
+          
+          // Convert map back to array
+          const newPermissionsData = Array.from(existingPermissionsMap.values())
+          props.onCheckPermissions(newPermissionsData)
+        }
       }
       
     } else {
@@ -1663,7 +2261,7 @@ const handleApplyPermissions = async () => {
 }
 
 const handleCheckPermissions = async () => {
-  // Validate only one user is selected
+  // Validate at least one user is selected
   if (selectedAdUsers.value.length === 0) {
     if (props.onError) {
       props.onError('Please select at least one user to check permissions')
@@ -1671,21 +2269,22 @@ const handleCheckPermissions = async () => {
     return
   }
 
-  if (selectedAdUsers.value.length > 1) {
-    if (props.onError) {
-      props.onError('Please select only ONE user to check permissions. Multiple users are not supported for permission checking.')
-    }
-    return
-  }
-
-  const userName = selectedAdUsers.value[0].name
+  const userNames = selectedAdUsers.value.map(u => u.name)
   checkLoading.value = true
 
   try {
-    const response = await axios.post('/api/permissions/check', {
-      serverUri: props.connectionInfo.serverUri,
-      userName: userName
-    })
+    // For multiple users, send userNames array; for single user, send userName
+    const requestBody = {
+      serverUri: props.connectionInfo.serverUri
+    }
+    
+    if (userNames.length === 1) {
+      requestBody.userName = userNames[0]
+    } else {
+      requestBody.userNames = userNames
+    }
+    
+    const response = await axios.post('/api/permissions/check', requestBody)
 
     if (response.data.success) {
       // Calculate permissions count by role
@@ -1719,7 +2318,11 @@ const handleCheckPermissions = async () => {
       })
       
       permissionsCountByRole.value = roleCounts
-      checkedUserName.value = userName
+      if (userNames.length === 1) {
+        checkedUserName.value = userNames[0]
+      } else {
+        checkedUserName.value = `${userNames.length} users (mutual access)`
+      }
       showPermissionsCounts.value = true
       
       // Notify parent component with the permissions data
@@ -1727,7 +2330,11 @@ const handleCheckPermissions = async () => {
         props.onCheckPermissions(response.data.permissions)
       }
       if (props.onSuccess) {
-        props.onSuccess(`Loaded permissions for ${userName}`)
+        if (userNames.length === 1) {
+          props.onSuccess(`Loaded permissions for ${userNames[0]}`)
+        } else {
+          props.onSuccess(`Loaded mutual permissions for ${userNames.length} users: ${userNames.join(', ')}`)
+        }
       }
     } else {
       if (props.onError) {

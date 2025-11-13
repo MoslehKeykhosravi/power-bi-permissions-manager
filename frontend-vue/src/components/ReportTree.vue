@@ -1131,10 +1131,14 @@ const getChildNodeId = (childNode, key) => {
 
 const handleAddRole = (nodeId, role) => {
   // Get current roles from itemRoles (user edits) or permissionsMap (original)
-  let currentRoles = itemRoles.value.get(nodeId)
+  // Check if nodeId exists in itemRoles first (even if value is empty array)
+  let currentRoles = null
+  if (itemRoles.value.has(nodeId)) {
+    currentRoles = itemRoles.value.get(nodeId)
+  }
   
   // If not in itemRoles, get from permissionsMap based on node path
-  if (!currentRoles) {
+  if (currentRoles === null || currentRoles === undefined) {
     const node = findNodeById(nodeId)
     if (node) {
       const path = node.type === 'folder' 
@@ -1162,9 +1166,20 @@ const handleAddRole = (nodeId, role) => {
     }
   }
   
+  // Ensure currentRoles is an array
+  if (!Array.isArray(currentRoles)) {
+    currentRoles = []
+  }
+  
   // Add role if not already present
   if (!currentRoles.includes(role)) {
     itemRoles.value.set(nodeId, [...currentRoles, role])
+    // If item was marked for removal, unmark it since we're adding a role back
+    const markedSet = new Set(markedForRemoval.value)
+    if (markedSet.has(nodeId)) {
+      markedSet.delete(nodeId)
+      markedForRemoval.value = Array.from(markedSet)
+    }
     // Notify parent of role changes
     if (props.onRoleChanges) {
       props.onRoleChanges(new Map(itemRoles.value))
@@ -1175,10 +1190,14 @@ const handleAddRole = (nodeId, role) => {
 
 const handleAddAllRoles = (nodeId, rolesToAdd) => {
   // Get current roles from itemRoles (user edits) or permissionsMap (original)
-  let currentRoles = itemRoles.value.get(nodeId)
+  // Check if nodeId exists in itemRoles first (even if value is empty array)
+  let currentRoles = null
+  if (itemRoles.value.has(nodeId)) {
+    currentRoles = itemRoles.value.get(nodeId)
+  }
   
   // If not in itemRoles, get from permissionsMap based on node path
-  if (!currentRoles) {
+  if (currentRoles === null || currentRoles === undefined) {
     const node = findNodeById(nodeId)
     if (node) {
       const path = node.type === 'folder' 
@@ -1204,6 +1223,11 @@ const handleAddAllRoles = (nodeId, rolesToAdd) => {
     } else {
       currentRoles = []
     }
+  }
+  
+  // Ensure currentRoles is an array
+  if (!Array.isArray(currentRoles)) {
+    currentRoles = []
   }
   
   // Add all roles that are not already present
@@ -1215,6 +1239,12 @@ const handleAddAllRoles = (nodeId, rolesToAdd) => {
   })
   
   itemRoles.value.set(nodeId, newRoles)
+  // If item was marked for removal, unmark it since we're adding roles back
+  const markedSet = new Set(markedForRemoval.value)
+  if (markedSet.has(nodeId)) {
+    markedSet.delete(nodeId)
+    markedForRemoval.value = Array.from(markedSet)
+  }
   // Notify parent of role changes
   if (props.onRoleChanges) {
     props.onRoleChanges(new Map(itemRoles.value))
@@ -1248,10 +1278,14 @@ const findNodeById = (targetId) => {
 
 const handleRemoveRole = (nodeId, role) => {
   // Get current roles from itemRoles (user edits) or permissionsMap (original)
-  let currentRoles = itemRoles.value.get(nodeId)
+  // Check if nodeId exists in itemRoles first (even if value is empty array)
+  let currentRoles = null
+  if (itemRoles.value.has(nodeId)) {
+    currentRoles = itemRoles.value.get(nodeId)
+  }
   
   // If not in itemRoles, get from permissionsMap based on node path
-  if (!currentRoles) {
+  if (currentRoles === null || currentRoles === undefined) {
     const node = findNodeById(nodeId)
     if (node) {
       const path = node.type === 'folder' 
@@ -1277,6 +1311,11 @@ const handleRemoveRole = (nodeId, role) => {
     } else {
       currentRoles = []
     }
+  }
+  
+  // Ensure currentRoles is an array
+  if (!Array.isArray(currentRoles)) {
+    currentRoles = []
   }
   
   const updatedRoles = currentRoles.filter(r => r !== role)

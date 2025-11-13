@@ -30,7 +30,7 @@
             @change="handleCheckChange"
             class="checkbox-input"
           />
-          <span class="checkbox-box" :class="{ 'marked-removal': isMarkedForRemoval }">
+          <span class="checkbox-box" :class="{ 'marked-removal': isMarkedForRemoval, 'checked': isChecked && !isMarkedForRemoval }">
             <svg v-if="isChecked && !isMarkedForRemoval" class="checkbox-checkmark" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -518,12 +518,14 @@ const getRoleText = (role) => {
 }
 
 /* When checkbox is checked but not marked for removal - green border to match checkmark */
-.checkbox-input:checked + .checkbox-box:not(.marked-removal) {
+.checkbox-input:checked + .checkbox-box:not(.marked-removal),
+.checkbox-box.checked:not(.marked-removal) {
   background: white;
   border-color: #4caf50;
 }
 
-.dark-mode .checkbox-input:checked + .checkbox-box:not(.marked-removal) {
+.dark-mode .checkbox-input:checked + .checkbox-box:not(.marked-removal),
+.dark-mode .checkbox-box.checked:not(.marked-removal) {
   background: #2c2c2c;
   border-color: #66bb6a;
 }
