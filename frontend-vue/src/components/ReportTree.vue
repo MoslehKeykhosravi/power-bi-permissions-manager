@@ -122,11 +122,11 @@
             </tr>
           </thead>
           <tbody>
+            <!-- Server Root Node (renders children recursively when expanded) -->
             <TableTreeNode
-              v-for="(childNode, key) in treeData.children"
-              :key="getChildNodeId(childNode, key)"
-              :node="childNode"
-              :node-id="getChildNodeId(childNode, key)"
+              :key="'server-root'"
+              :node="treeData"
+              node-id="server-root"
               :expanded="expandedSet"
               :checked="checkedSet"
               :marked-for-removal="markedForRemovalSet"
@@ -194,7 +194,7 @@ const props = defineProps({
 })
 
 const searchText = ref('')
-const expanded = ref(['server-root'])
+const expanded = ref(['server-root']) // Default to expanded (server-root expanded)
 const checked = ref([])
 const markedForRemoval = ref([]) // Items marked with red X for removal
 const originalPermissions = ref([]) // Items user originally had access to (from Check Permissions)
@@ -372,7 +372,7 @@ watch(() => props.reports, () => {
   markedForRemoval.value = []
   originalPermissions.value = []
   itemRoles.value = new Map()
-  expanded.value = ['server-root']
+  expanded.value = ['server-root'] // Default to expanded (server-root expanded)
 }, { deep: false })
 
 // Clear itemRoles and permissionsMap when no items are selected
@@ -434,7 +434,7 @@ watch(searchText, () => {
   if (searchText.value.trim()) {
     expanded.value = [...allNodeIds.value]
   } else {
-    expanded.value = ['server-root']
+    expanded.value = ['server-root'] // Default to expanded (server-root expanded)
   }
 })
 
@@ -947,7 +947,7 @@ const expandAll = () => {
 }
 
 const collapseAll = () => {
-  expanded.value = ['server-root']
+  expanded.value = ['server-root'] // Collapse all except server-root (keep it expanded)
   lastAction.value = 'collapse'
 }
 

@@ -174,6 +174,7 @@ import { computed, watch, nextTick, ref } from 'vue'
 import PowerBIIcon from '../assets/PowerBIIcon.vue'
 import RDLIcon from '../assets/RDLIcon.vue'
 import FolderIcon from '../assets/FolderIcon.vue'
+import ServerIcon from '../assets/ServerIcon.vue'
 import { useI18n } from '../composables/useI18n'
 
 const { t } = useI18n()
@@ -329,7 +330,7 @@ watch(isEditing, (newVal) => {
 
 const getIconComponent = () => {
   if (props.node.type === 'server') {
-    return null
+    return ServerIcon
   } else if (props.node.type === 'folder') {
     return FolderIcon
   } else if (props.node.nodeType === 'report' && props.node.type && props.node.type.includes('PBIX')) {
@@ -341,7 +342,7 @@ const getIconComponent = () => {
 
 const getDisplayName = () => {
   if (props.node.type === 'server') {
-    return 'Server'
+    return props.node.name || 'Server'
   } else if (props.node.type === 'folder') {
     return props.nodeId.split('_')[1].split('/').pop()
   } else if (props.node.nodeType === 'report') {
