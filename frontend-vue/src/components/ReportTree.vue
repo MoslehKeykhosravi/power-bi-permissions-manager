@@ -110,10 +110,7 @@
 
     <!-- Table View -->
     <div class="tree-container">
-      <div v-if="Object.keys(treeData.children).length === 0" class="empty-state">
-        {{ searchText ? t('noMatch') : t('noReports') }}
-      </div>
-      <div v-else class="table-view-wrapper">
+      <div class="table-view-wrapper">
         <table class="report-table">
           <thead>
             <tr>
@@ -137,6 +134,8 @@
               :item-roles="itemRoles"
               :role-picker-open="rolePickerOpen"
               :level="0"
+              :server-list="serverList"
+              :current-server-uri="connectionInfo?.serverUri"
               @toggle-expand="handleToggleExpand"
               @check="handleCheck"
               @start-editing="startEditing"
@@ -147,7 +146,24 @@
               @add-all-roles="handleAddAllRoles"
               @remove-role="handleRemoveRole"
               @toggle-role-picker="handleToggleRolePicker"
+              @switch-server="handleServerSwitch"
             />
+            <!-- Empty state message when no reports and not searching -->
+            <tr v-if="Object.keys(treeData.children).length === 0 && !searchText" class="empty-state-row">
+              <td colspan="2" class="empty-state-cell">
+                <div class="empty-state">
+                  {{ t('noReports') || 'No reports found' }}
+                </div>
+              </td>
+            </tr>
+            <!-- No match message when searching -->
+            <tr v-if="Object.keys(treeData.children).length === 0 && searchText" class="empty-state-row">
+              <td colspan="2" class="empty-state-cell">
+                <div class="empty-state">
+                  {{ t('noMatch') || 'No matches found' }}
+                </div>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -190,6 +206,14 @@ const props = defineProps({
   onRoleChanges: {
     type: Function,
     default: null
+  },
+  serverList: {
+    type: Array,
+    default: () => []
+  },
+  onServerSwitch: {
+    type: Function,
+    default: null
   }
 })
 
@@ -207,7 +231,7 @@ const rolePickerOpen = ref(null) // Track which node has role picker open
 const permissionsMap = ref(new Map()) // Map of path -> roles from permissions data
 
 const serverAddress = computed(() => {
-  return props.connectionInfo?.serverUri || 'Report Server'
+  return props.connectionInfo?.serverUri || (props.serverList.length > 0 ? 'Select server' : 'Report Server')
 })
 
 const expandedSet = computed(() => new Set(expanded.value))
@@ -1489,6 +1513,12 @@ const handleRemoveRole = (nodeId, role) => {
 const handleToggleRolePicker = (nodeId) => {
   rolePickerOpen.value = rolePickerOpen.value === nodeId ? null : nodeId
 }
+
+const handleServerSwitch = (serverUri) => {
+  if (props.onServerSwitch) {
+    props.onServerSwitch(serverUri)
+  }
+}
 </script>
 
 <style scoped>
@@ -1802,6 +1832,20 @@ const handleToggleRolePicker = (nodeId) => {
 .empty-state {
   padding: 2rem;
   text-align: center;
+  color: #999;
+}
+
+.empty-state-row {
+  border: none;
+}
+
+.empty-state-cell {
+  padding: 2rem;
+  text-align: center;
+  color: #999;
+}
+
+.dark-mode .empty-state-cell {
   color: #999;
 }
 

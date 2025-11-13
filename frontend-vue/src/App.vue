@@ -98,7 +98,7 @@
               @change="handleServerChange" 
               class="minimal-select"
             >
-              <option value="" disabled>{{ t('selectServer') }}</option>
+              <option value="" disabled selected>{{ t('selectServer') || 'Select server' }}</option>
               <option v-for="server in serverList" :key="server" :value="server">
                 {{ server }}
               </option>
@@ -132,7 +132,7 @@
         </div>
 
         <!-- Main Content Grid -->
-        <div v-if="!loading && connected && reports.length > 0" class="content-grid">
+        <div v-if="!loading" class="content-grid">
           <!-- Reports Panel -->
           <div class="card reports-panel">
             <ReportTree
@@ -142,6 +142,8 @@
               :on-reload-reports="reloadReports"
               :permissions-data="permissionsData"
               :on-role-changes="handleRoleChanges"
+              :server-list="serverList"
+              :on-server-switch="handleServerSwitch"
             />
           </div>
 
@@ -162,11 +164,6 @@
               :on-items-selected="handleItemsSelected"
             />
           </div>
-        </div>
-
-        <!-- Empty State -->
-        <div v-if="!loading && connected && reports.length === 0" class="card empty-state-card">
-          <p>📭 {{ t('noReportsFound') }}</p>
         </div>
       </div>
     </main>
@@ -338,13 +335,25 @@ const handleConnect = async () => {
       reports.value = response.data.reports || []
       connected.value = true
       selectedItems.value = []
-      showToast(t('connectionSuccess', { count: reports.value.length }), 'success')
+      if (reports.value.length > 0) {
+        showToast(t('connectionSuccess', { count: reports.value.length }), 'success')
+      } else {
+        showToast(t('noReportsFound') || 'No reports found on this server', 'info')
+      }
     } else {
       throw new Error('Failed to fetch reports')
     }
   } catch (err) {
     const errorMsg = err.response?.data?.message || err.message || t('connectionError')
     error.value = errorMsg
+    // Still set connection info and show tree even on error, so user can switch servers
+    connectionInfo.value = { 
+      serverUri: urlToUse.trim(),
+      adConfig: adConfigGlobal.value 
+    }
+    reports.value = []
+    connected.value = true
+    selectedItems.value = []
     showToast(errorMsg, 'error')
   } finally {
     loading.value = false
@@ -387,6 +396,63 @@ const handleCheckPermissions = (permissions) => {
 
 const handleRoleChanges = (rolesMap) => {
   itemRoles.value = rolesMap
+}
+
+const handleServerSwitch = async (serverUri) => {
+  if (!serverUri || !serverUri.trim()) {
+    return
+  }
+
+  // Set the selected server
+  if (serverList.value.includes(serverUri)) {
+    selectedServer.value = serverUri
+    useCustom.value = false
+  } else {
+    customUrl.value = serverUri
+    useCustom.value = true
+  }
+
+  // Automatically connect to the new server
+  loading.value = true
+  error.value = null
+
+  try {
+    const response = await axios.post('/api/reports/list', {
+      serverUri: serverUri.trim()
+    })
+
+    if (response.data.success) {
+      // Include AD config in connection info
+      connectionInfo.value = { 
+        serverUri: serverUri.trim(),
+        adConfig: adConfigGlobal.value 
+      }
+      reports.value = response.data.reports || []
+      connected.value = true
+      selectedItems.value = []
+      if (reports.value.length > 0) {
+        showToast(t('connectionSuccess', { count: reports.value.length }), 'success')
+      } else {
+        showToast(t('noReportsFound') || 'No reports found on this server', 'info')
+      }
+    } else {
+      throw new Error('Failed to fetch reports')
+    }
+  } catch (err) {
+    const errorMsg = err.response?.data?.message || err.message || t('connectionError')
+    error.value = errorMsg
+    // Still set connection info and show tree even on error, so user can switch servers
+    connectionInfo.value = { 
+      serverUri: serverUri.trim(),
+      adConfig: adConfigGlobal.value 
+    }
+    reports.value = []
+    connected.value = true
+    selectedItems.value = []
+    showToast(errorMsg, 'error')
+  } finally {
+    loading.value = false
+  }
 }
 
 // Lifecycle
