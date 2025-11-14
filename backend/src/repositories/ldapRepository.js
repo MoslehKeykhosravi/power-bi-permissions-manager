@@ -1,4 +1,5 @@
 const ldap = require('ldapjs');
+const logger = require('../utils/logger');
 
 /**
  * Enhanced Active Directory Helper Functions
@@ -8,7 +9,34 @@ const ldap = require('ldapjs');
 /**
  * Create and bind LDAP client
  */
-async function createLdapClient(ldapUrl, bindDN, bindPassword) {
+const clientPool = new Map();
+const POOL_TTL_MS = 2 * 60 * 1000;
+
+const buildPoolKey = (ldapUrl, bindDN) => `${ldapUrl}|${bindDN}`;
+
+const safeUnbind = (client) => {
+  if (!client) return;
+  try {
+    client.unbind();
+  } catch (err) {
+    logger.warn('Failed to unbind LDAP client gracefully', err);
+  }
+};
+
+async function createLdapClient(ldapUrl, bindDN, bindPassword, { reuse = true } = {}) {
+  const poolKey = buildPoolKey(ldapUrl, bindDN);
+
+  if (reuse) {
+    const pooled = clientPool.get(poolKey);
+    if (pooled) {
+      if (Date.now() < pooled.expiresAt && pooled.client?.connected) {
+        return pooled.client;
+      }
+      safeUnbind(pooled.client);
+      clientPool.delete(poolKey);
+    }
+  }
+
   const client = ldap.createClient({
     url: ldapUrl,
     timeout: 5000,
@@ -16,7 +44,7 @@ async function createLdapClient(ldapUrl, bindDN, bindPassword) {
     reconnect: true
   });
 
-  return new Promise((resolve, reject) => {
+  const boundClient = await new Promise((resolve, reject) => {
     client.bind(bindDN, bindPassword, (err) => {
       if (err) {
         client.unbind();
@@ -26,7 +54,34 @@ async function createLdapClient(ldapUrl, bindDN, bindPassword) {
       }
     });
   });
+
+  if (reuse) {
+    const expiresAt = Date.now() + POOL_TTL_MS;
+    clientPool.set(poolKey, {
+      client: boundClient,
+      expiresAt
+    });
+
+    setTimeout(() => {
+      const entry = clientPool.get(poolKey);
+      if (entry && entry.client === boundClient && Date.now() >= entry.expiresAt) {
+        clientPool.delete(poolKey);
+        safeUnbind(boundClient);
+      }
+    }, POOL_TTL_MS);
+  }
+
+  return boundClient;
 }
+
+const releaseClient = (ldapUrl, bindDN) => {
+  const poolKey = buildPoolKey(ldapUrl, bindDN);
+  const entry = clientPool.get(poolKey);
+  if (entry) {
+    clientPool.delete(poolKey);
+    safeUnbind(entry.client);
+  }
+};
 
 /**
  * Search LDAP with given options
@@ -103,11 +158,11 @@ function parseDN(dn) {
 /**
  * Get detailed user information including organizational data
  */
-async function getUserDetails(ldapUrl, bindDN, bindPassword, searchBase, userName) {
+async function getUserDetails(ldapUrl, bindDN, bindPassword, searchBase, userName, options = {}) {
   let client;
   
   try {
-    client = await createLdapClient(ldapUrl, bindDN, bindPassword);
+    client = await createLdapClient(ldapUrl, bindDN, bindPassword, options);
     
     // Search for the specific user with comprehensive attributes
     const searchOptions = {
@@ -191,11 +246,14 @@ async function getUserDetails(ldapUrl, bindDN, bindPassword, searchBase, userNam
 
     return userDetails;
   } catch (error) {
-    console.error('Error getting user details:', error);
+    logger.error('Error getting user details:', error);
+    if (options?.reuse) {
+      releaseClient(ldapUrl, bindDN);
+    }
     throw error;
   } finally {
-    if (client) {
-      client.unbind();
+    if (client && (!options || options.reuse !== true)) {
+      safeUnbind(client);
     }
   }
 }
@@ -203,11 +261,11 @@ async function getUserDetails(ldapUrl, bindDN, bindPassword, searchBase, userNam
 /**
  * Get group members
  */
-async function getGroupMembers(ldapUrl, bindDN, bindPassword, searchBase, groupName) {
+async function getGroupMembers(ldapUrl, bindDN, bindPassword, searchBase, groupName, options = {}) {
   let client;
   
   try {
-    client = await createLdapClient(ldapUrl, bindDN, bindPassword);
+    client = await createLdapClient(ldapUrl, bindDN, bindPassword, options);
     
     // First, find the group
     const groupSearchOptions = {
@@ -271,7 +329,7 @@ async function getGroupMembers(ldapUrl, bindDN, bindPassword, searchBase, groupN
           });
         }
       } catch (err) {
-        console.warn(`Could not get details for member: ${memberDN}`, err.message);
+        logger.warn(`Could not get details for member: ${memberDN}`, err);
         // Add minimal info
         members.push({
           cn: parseDN(memberDN),
@@ -283,11 +341,14 @@ async function getGroupMembers(ldapUrl, bindDN, bindPassword, searchBase, groupN
 
     return { group: groupInfo, members };
   } catch (error) {
-    console.error('Error getting group members:', error);
+    logger.error('Error getting group members:', error);
+    if (options?.reuse) {
+      releaseClient(ldapUrl, bindDN);
+    }
     throw error;
   } finally {
-    if (client) {
-      client.unbind();
+    if (client && (!options || options.reuse !== true)) {
+      safeUnbind(client);
     }
   }
 }
@@ -295,11 +356,11 @@ async function getGroupMembers(ldapUrl, bindDN, bindPassword, searchBase, groupN
 /**
  * Get user's direct reports (subordinates)
  */
-async function getDirectReports(ldapUrl, bindDN, bindPassword, searchBase, userName) {
+async function getDirectReports(ldapUrl, bindDN, bindPassword, searchBase, userName, options = {}) {
   let client;
   
   try {
-    client = await createLdapClient(ldapUrl, bindDN, bindPassword);
+    client = await createLdapClient(ldapUrl, bindDN, bindPassword, options);
     
     // First get the user's DN
     const userSearchOptions = {
@@ -353,17 +414,20 @@ async function getDirectReports(ldapUrl, bindDN, bindPassword, searchBase, userN
           });
         }
       } catch (err) {
-        console.warn(`Could not get details for direct report: ${reportDN}`, err.message);
+        logger.warn(`Could not get details for direct report: ${reportDN}`, err);
       }
     }
 
     return directReports;
   } catch (error) {
-    console.error('Error getting direct reports:', error);
+    logger.error('Error getting direct reports:', error);
+    if (options?.reuse) {
+      releaseClient(ldapUrl, bindDN);
+    }
     throw error;
   } finally {
-    if (client) {
-      client.unbind();
+    if (client && (!options || options.reuse !== true)) {
+      safeUnbind(client);
     }
   }
 }
@@ -371,11 +435,11 @@ async function getDirectReports(ldapUrl, bindDN, bindPassword, searchBase, userN
 /**
  * Get organizational hierarchy (manager chain)
  */
-async function getManagerChain(ldapUrl, bindDN, bindPassword, searchBase, userName, maxLevels = 10) {
+async function getManagerChain(ldapUrl, bindDN, bindPassword, searchBase, userName, maxLevels = 10, options = {}) {
   let client;
   
   try {
-    client = await createLdapClient(ldapUrl, bindDN, bindPassword);
+    client = await createLdapClient(ldapUrl, bindDN, bindPassword, options);
     
     const chain = [];
     const visitedUsers = new Set(); // Track visited users to prevent circular references
@@ -386,7 +450,7 @@ async function getManagerChain(ldapUrl, bindDN, bindPassword, searchBase, userNa
       // Check for circular reference
       const userNameLower = currentUserName.toLowerCase();
       if (visitedUsers.has(userNameLower)) {
-        console.warn(`Circular manager reference detected at ${currentUserName}. Stopping chain.`);
+        logger.warn(`Circular manager reference detected at ${currentUserName}. Stopping chain.`);
         break;
       }
       
@@ -446,7 +510,7 @@ async function getManagerChain(ldapUrl, bindDN, bindPassword, searchBase, userNa
           
           // Check if next manager is already in the chain (circular reference)
           if (visitedUsers.has(nextUserName.toLowerCase())) {
-            console.warn(`Circular manager reference detected: ${nextUserName} is already in chain. Stopping.`);
+            logger.warn(`Circular manager reference detected: ${nextUserName} is already in chain. Stopping.`);
             // Mark current user as top level since we can't go further
             chain[chain.length - 1].isTopLevel = true;
             break;
@@ -464,11 +528,14 @@ async function getManagerChain(ldapUrl, bindDN, bindPassword, searchBase, userNa
 
     return chain;
   } catch (error) {
-    console.error('Error getting manager chain:', error);
+    logger.error('Error getting manager chain:', error);
+    if (options?.reuse) {
+      releaseClient(ldapUrl, bindDN);
+    }
     throw error;
   } finally {
-    if (client) {
-      client.unbind();
+    if (client && (!options || options.reuse !== true)) {
+      safeUnbind(client);
     }
   }
 }
@@ -476,11 +543,11 @@ async function getManagerChain(ldapUrl, bindDN, bindPassword, searchBase, userNa
 /**
  * Search users by department
  */
-async function searchByDepartment(ldapUrl, bindDN, bindPassword, searchBase, department, maxResults = 500) {
+async function searchByDepartment(ldapUrl, bindDN, bindPassword, searchBase, department, maxResults = 500, options = {}) {
   let client;
   
   try {
-    client = await createLdapClient(ldapUrl, bindDN, bindPassword);
+    client = await createLdapClient(ldapUrl, bindDN, bindPassword, options);
     
     const searchOptions = {
       filter: `(&(objectCategory=person)(objectClass=user)(department=${department}))`,
@@ -508,11 +575,14 @@ async function searchByDepartment(ldapUrl, bindDN, bindPassword, searchBase, dep
       type: 'user'
     }));
   } catch (error) {
-    console.error('Error searching by department:', error);
+    logger.error('Error searching by department:', error);
+    if (options?.reuse) {
+      releaseClient(ldapUrl, bindDN);
+    }
     throw error;
   } finally {
-    if (client) {
-      client.unbind();
+    if (client && (!options || options.reuse !== true)) {
+      safeUnbind(client);
     }
   }
 }
@@ -520,11 +590,11 @@ async function searchByDepartment(ldapUrl, bindDN, bindPassword, searchBase, dep
 /**
  * Get all unique departments
  */
-async function getAllDepartments(ldapUrl, bindDN, bindPassword, searchBase) {
+async function getAllDepartments(ldapUrl, bindDN, bindPassword, searchBase, options = {}) {
   let client;
   
   try {
-    client = await createLdapClient(ldapUrl, bindDN, bindPassword);
+    client = await createLdapClient(ldapUrl, bindDN, bindPassword, options);
     
     const searchOptions = {
       filter: '(&(objectCategory=person)(objectClass=user)(department=*))',
@@ -545,11 +615,14 @@ async function getAllDepartments(ldapUrl, bindDN, bindPassword, searchBase) {
 
     return Array.from(departments).sort();
   } catch (error) {
-    console.error('Error getting departments:', error);
+    logger.error('Error getting departments:', error);
+    if (options?.reuse) {
+      releaseClient(ldapUrl, bindDN);
+    }
     throw error;
   } finally {
-    if (client) {
-      client.unbind();
+    if (client && (!options || options.reuse !== true)) {
+      safeUnbind(client);
     }
   }
 }
@@ -557,11 +630,11 @@ async function getAllDepartments(ldapUrl, bindDN, bindPassword, searchBase) {
 /**
  * Get all unique locations/offices
  */
-async function getAllLocations(ldapUrl, bindDN, bindPassword, searchBase) {
+async function getAllLocations(ldapUrl, bindDN, bindPassword, searchBase, options = {}) {
   let client;
   
   try {
-    client = await createLdapClient(ldapUrl, bindDN, bindPassword);
+    client = await createLdapClient(ldapUrl, bindDN, bindPassword, options);
     
     const searchOptions = {
       filter: '(&(objectCategory=person)(objectClass=user))',
@@ -583,11 +656,14 @@ async function getAllLocations(ldapUrl, bindDN, bindPassword, searchBase) {
 
     return Array.from(locations).sort();
   } catch (error) {
-    console.error('Error getting locations:', error);
+    logger.error('Error getting locations:', error);
+    if (options?.reuse) {
+      releaseClient(ldapUrl, bindDN);
+    }
     throw error;
   } finally {
-    if (client) {
-      client.unbind();
+    if (client && (!options || options.reuse !== true)) {
+      safeUnbind(client);
     }
   }
 }
@@ -604,6 +680,7 @@ module.exports = {
   getManagerChain,
   searchByDepartment,
   getAllDepartments,
-  getAllLocations
+  getAllLocations,
+  releaseClient
 };
 

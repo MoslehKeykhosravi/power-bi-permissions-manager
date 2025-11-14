@@ -2,76 +2,63 @@ const winston = require('winston');
 
 /**
  * Centralized Logger Configuration
- * Replaces console.log with structured logging
+ * Provides structured logging across the backend layers
  */
 
-// Define log levels
 const levels = {
   error: 0,
   warn: 1,
   info: 2,
   http: 3,
-  debug: 4,
+  debug: 4
 };
 
-// Define log colors
 const colors = {
   error: 'red',
   warn: 'yellow',
   info: 'green',
   http: 'magenta',
-  debug: 'blue',
+  debug: 'blue'
 };
 
-// Add colors to winston
 winston.addColors(colors);
 
-// Define log format
-const format = winston.format.combine(
+const baseFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
   winston.format.json()
 );
 
-// Define console format (for development)
 const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format.printf(
-    (info) => `${info.timestamp} ${info.level}: ${info.message}`
-  )
+  winston.format.printf(info => `${info.timestamp} ${info.level}: ${info.message}`)
 );
 
-// Determine log level based on environment
-const level = () => {
+const resolveLevel = () => {
   const env = process.env.NODE_ENV || 'development';
-  const isDevelopment = env === 'development';
-  return isDevelopment ? 'debug' : 'info';
+  return env === 'development' ? 'debug' : (process.env.LOG_LEVEL || 'info');
 };
 
-// Define transports
 const transports = [
-  // Console transport
   new winston.transports.Console({
-    format: consoleFormat,
-  }),
+    format: consoleFormat
+  })
 ];
 
-// Create the logger
 const logger = winston.createLogger({
-  level: level(),
+  level: resolveLevel(),
   levels,
-  format,
+  format: baseFormat,
   transports,
-  exitOnError: false,
+  exitOnError: false
 });
 
-// Stream for Morgan integration
 logger.stream = {
   write: (message) => {
     logger.http(message.trim());
-  },
+  }
 };
 
 module.exports = logger;

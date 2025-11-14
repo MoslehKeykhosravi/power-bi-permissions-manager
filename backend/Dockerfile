@@ -11,10 +11,10 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 WORKDIR /app
 
 # Copy package files first for better layer caching
-COPY package*.json ./
+COPY package*.json package-lock.json ./
 
 # Install dependencies with optimization
-RUN npm install --production --prefer-offline --no-audit && \
+RUN npm ci --omit=dev --prefer-offline --no-audit && \
     npm cache clean --force
 
 # Copy application files with proper ownership
@@ -34,5 +34,5 @@ HEALTHCHECK --interval=20s --timeout=3s --start-period=10s --retries=3 \
 ENTRYPOINT ["dumb-init", "--"]
 
 # Start application
-CMD ["node", "server.js"]
+CMD ["node", "src/server.js"]
 
