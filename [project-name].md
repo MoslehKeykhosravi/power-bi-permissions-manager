@@ -54,4 +54,6 @@ If future features introduce persistence (audit logs, templates, etc.), document
 - Improvement backlog lives in `suggestions/recommended-improvements.md`.
 - If clarifications are needed, document them here for continuity before coding.
 
-_Last updated: 2025-11-14 – backend layered refactor + AD fallback_
+### Last Updated
+
+2025-11-14 – backend layered refactor + AD fallback

@@ -43,7 +43,7 @@ Power BI Permissions Manager centralizes the discovery and governance of Power B
 
 ### System Topology
 
-```
+```text
 Browser (Vue 3 SPA)
         │ HTTPS
         ▼
@@ -56,7 +56,7 @@ Backend API (Express)
 
 ### Folder & File Structure
 
-```
+```text
 power-bi-permissions-manager/
 ├── backend/                # Express service, NTLM + LDAP logic
 │   ├── src/
@@ -339,7 +339,7 @@ Prioritize features based on compliance requirements and available infrastructur
 
 ### Environment Reference
 
-```
+```env
 PORT=5000
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost
 PBI_DOMAIN=YOURDOMAIN
