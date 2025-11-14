@@ -211,11 +211,75 @@ router.post('/check', async (req, res) => {
       const userPermissions = [];
       const userNameLower = userNameToCheck.toLowerCase();
       
-      // Filter out invalid items first
+      // Filter out invalid items first (but keep root path '/')
       const validItems = catalogItems.filter(item => {
         const itemPath = item.Path;
-        return itemPath && itemPath !== '/';
+        return itemPath; // Include all items including root path '/'
       });
+      
+      // Always check root path '/' separately (it may not be in catalog items)
+      try {
+        const rootPathEscaped = encodeURIComponent('/');
+        const rootPathEndpoints = [
+          `${serverUri}/api/v2.0/CatalogItems(Path='${rootPathEscaped}')/Policies`,
+          `${serverUri}/api/v2.0/CatalogItems(Path='/')/Policies`
+        ];
+        
+        for (const endpoint of rootPathEndpoints) {
+          try {
+            const policies = await ntlmGet(endpoint, domain, user, password);
+            if (policies && policies.Policies) {
+              const userPolicy = policies.Policies.find(p => {
+                const policyUser = p.GroupUserName || '';
+                const policyUserLower = policyUser.toLowerCase();
+                const policyUserNameOnly = policyUserLower.includes('\\') 
+                  ? policyUserLower.split('\\').pop() 
+                  : policyUserLower;
+                const userNameOnly = userNameLower.includes('\\')
+                  ? userNameLower.split('\\').pop()
+                  : userNameLower;
+                
+                // Check if user matches (handle domain prefixes)
+                return policyUserLower === userNameLower || 
+                       policyUserLower.endsWith(`\\${userNameLower}`) ||
+                       policyUserNameOnly === userNameOnly ||
+                       policyUserLower === userNameOnly ||
+                       userNameOnly === policyUserNameOnly;
+              });
+              
+              if (userPolicy && userPolicy.Roles && userPolicy.Roles.length > 0) {
+                const userRoles = [];
+                if (userPolicy.Roles && Array.isArray(userPolicy.Roles)) {
+                  userPolicy.Roles.forEach(role => {
+                    const roleName = role && role.Name ? role.Name : role;
+                    if (roleName && !userRoles.includes(roleName)) {
+                      userRoles.push(roleName);
+                    }
+                  });
+                }
+                
+                if (userRoles.length > 0) {
+                  userPermissions.push({
+                    itemType: 'Folder',
+                    path: '/',
+                    name: '/',
+                    roles: userRoles,
+                    folderPath: '/',
+                    id: null,
+                    catalogType: 'Folder'
+                  });
+                  break; // Found permissions, no need to try other endpoints
+                }
+              }
+            }
+          } catch (error) {
+            continue; // Try next endpoint
+          }
+        }
+      } catch (error) {
+        // If root path check fails, continue with other items
+        console.log(`⚠️ Failed to check root path permissions: ${error.message}`);
+      }
 
       // Process items in parallel batches to avoid overwhelming the server
       const BATCH_SIZE = 20; // Process 20 items at a time

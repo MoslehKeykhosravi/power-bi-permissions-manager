@@ -7,127 +7,42 @@
       {{ t('setUserAccess') }}
     </h2>
 
-    <!-- User Input Row -->
-    <div class="form-section user-input-row">
-      <label>{{ t('userNameOrGroup') }}</label>
-      <div class="user-input-container">
-        <!-- Live Search Input -->
-        <div class="user-search-container">
-          <input
-            v-model="adSearchQuery"
-            type="text"
-            placeholder="Search users or groups from Active Directory..."
-            class="text-input user-search-input"
-            @input="searchAdUsers"
-            @focus="showSearchResults = true"
-          />
-          <button v-if="adSearchQuery" @click="clearAdSearch" class="clear-input-btn">×</button>
+    <!-- Roles Section -->
+    <div class="form-section role-input-row">
+      <label>{{ t('accessLevel') }}</label>
+      <div class="role-input-wrapper">
+        <!-- Multi-select Dropdown -->
+        <div class="multi-select" :class="{ open: dropdownOpen }" @click="toggleDropdown">
+          <div class="selected-items">
+            <span v-if="selectedRoles.length === 0" class="placeholder">{{ t('selectRoles') }}</span>
+            <div v-else class="chips">
+              <span v-for="role in selectedRoles" :key="role" class="chip">
+                <svg width="12" height="12" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M10 2C8.34315 2 7 3.34315 7 5V8H6C5.44772 8 5 8.44772 5 9V17C5 17.5523 5.44772 18 6 18H14C14.5523 18 15 17.5523 15 17V9C15 8.44772 14.5523 8 14 8H13V5C13 3.34315 11.6569 2 10 2ZM11 8V5C11 4.44772 10.5523 4 10 4C9.44772 4 9 4.44772 9 5V8H11Z" fill="currentColor"/>
+                </svg>
+                {{ t('role' + role.replace(/\s+/g, '')) }}
+                <button @click.stop="removeRole(role)" class="chip-remove">×</button>
+              </span>
+            </div>
+            <svg class="dropdown-arrow" :class="{ rotated: dropdownOpen }" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
           
-          <!-- Live Search Results -->
-          <div v-if="showSearchResults && (adLoading || adError || adUsers.length > 0 || adSearchQuery)" class="live-search-results">
-            <!-- Loading State -->
-            <div v-if="adLoading" class="search-result-item loading-item">
-              <span class="spinner-small"></span> Searching...
+          <div v-if="dropdownOpen" class="dropdown-menu">
+            <div class="dropdown-item select-all" @click.stop="toggleSelectAll">
+              <input type="checkbox" :checked="isAllSelected" @click.stop="toggleSelectAll" />
+              <span><strong>{{ t('selectAll') }}</strong></span>
             </div>
-            
-            <!-- Error State -->
-            <div v-if="adError && !adLoading" class="search-result-item error-item">
-              {{ adError }}
-            </div>
-            
-            <!-- User Results -->
-            <div v-if="!adLoading && !adError && adUsers.length > 0">
-              <div
-                v-for="user in adUsers"
-                :key="user.name"
-                class="search-result-item"
-                :class="{ selected: isAdUserSelected(user) }"
-                @click="selectAdUser(user)"
-              >
-                <!-- Status Icon for Users (active/inactive) -->
-                <span 
-                  v-if="user.type === 'User' && user.isActive !== undefined" 
-                  class="status-indicator"
-                  :class="{ active: user.isActive, inactive: !user.isActive }"
-                  :title="user.isActive ? 'Active' : 'Inactive'"
-                >
-                  <svg v-if="user.isActive" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </span>
-                
-                <!-- Status Icon for Groups (always active/green) -->
-                <span 
-                  v-if="user.type === 'Group'" 
-                  class="status-indicator active"
-                  title="Group"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </span>
-                
-                <!-- User Icon (Single Person - Blue) -->
-                <svg v-if="user.type === 'User'" width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="user-type-icon">
-                  <path d="M10 10C12.2091 10 14 8.20914 14 6C14 3.79086 12.2091 2 10 2C7.79086 2 6 3.79086 6 6C6 8.20914 7.79086 10 10 10Z" fill="currentColor"/>
-                  <path d="M4 18C4 14.6863 6.68629 12 10 12C13.3137 12 16 14.6863 16 18V18H4V18Z" fill="currentColor"/>
-                </svg>
-                
-                <!-- Group Icon (3 People - Orange) -->
-                <svg v-else width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="group-type-icon">
-                  <!-- Person 1 (Left) -->
-                  <circle cx="5.5" cy="5" r="2.5" fill="currentColor"/>
-                  <path d="M1 14C1 11.7909 2.79086 10 5 10C6.48 10 7.77 10.81 8.46 12" fill="currentColor"/>
-                  
-                  <!-- Person 2 (Center - Larger) -->
-                  <circle cx="10" cy="4.5" r="3" fill="currentColor"/>
-                  <path d="M5 16C5 13.2386 7.23858 11 10 11C12.7614 11 15 13.2386 15 16V17H5V16Z" fill="currentColor"/>
-                  
-                  <!-- Person 3 (Right) -->
-                  <circle cx="14.5" cy="5" r="2.5" fill="currentColor"/>
-                  <path d="M19 14C19 11.7909 17.2091 10 15 10C13.52 10 12.23 10.81 11.54 12" fill="currentColor"/>
-                </svg>
-                
-                <div class="user-result-info">
-                  <span class="user-result-display">{{ user.displayText }}</span>
-                </div>
-                
-                <!-- View Details Button (for users) -->
-                <button 
-                  v-if="user.type === 'User'" 
-                  @click.stop="showUserDetails(user.name)" 
-                  class="user-info-btn"
-                  title="View Details"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-                
-                <!-- View Group Members Button (for groups) -->
-                <button 
-                  v-if="user.type === 'Group'" 
-                  @click.stop="showGroupMembers(user.name)" 
-                  class="user-info-btn"
-                  title="View Group Members"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-                
-                <span v-if="isAdUserSelected(user)" class="check-icon">✓</span>
-              </div>
-            </div>
-            
-            <!-- Empty State -->
-            <div v-if="!adLoading && !adError && adUsers.length === 0 && adSearchQuery" class="search-result-item empty-item">
-              No users or groups found for "{{ adSearchQuery }}"
+            <div class="dropdown-divider"></div>
+            <div
+              v-for="role in availableRoles"
+              :key="role"
+              class="dropdown-item"
+              @click.stop="toggleRole(role)"
+            >
+              <input type="checkbox" :checked="selectedRoles.includes(role)" @click.stop="toggleRole(role)" />
+              <span>{{ t('role' + role.replace(/\s+/g, '')) }}</span>
             </div>
           </div>
         </div>
@@ -159,22 +74,7 @@
         </button>
       </div>
     </div>
-
-    <!-- Selected Users Tags - Below the input row -->
-    <div v-if="selectedAdUsers.length > 0" class="selected-users-section">
-      <div class="selected-users-tags">
-        <span v-for="user in selectedAdUsers" :key="user.name" class="user-tag">
-          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M10 10C12.2091 10 14 8.20914 14 6C14 3.79086 12.2091 2 10 2C7.79086 2 6 3.79086 6 6C6 8.20914 7.79086 10 10 10Z" fill="currentColor"/>
-            <path d="M4 18C4 14.6863 6.68629 12 10 12C13.3137 12 16 14.6863 16 18V18H4V18Z" fill="currentColor"/>
-          </svg>
-          {{ user.name }}
-          <button @click="removeAdUser(user)" class="user-tag-remove">×</button>
-        </span>
-        
-      </div>
-    </div>
-
+    <div class="divider"></div>
 
     <!-- Selected Items Summary -->
     <div class="form-section selected-items-section">
@@ -547,13 +447,20 @@ const props = defineProps({
   onItemsSelected: {
     type: Function,
     default: () => {}
+  },
+  selectedAdUsers: {
+    type: Array,
+    default: () => []
   }
 })
 
 const userName = ref('')
 
+const dropdownOpen = ref(false)
+const selectedRoles = ref(['Browser'])
+
 // Watch button disabled state for debugging
-watch([() => hasActualChanges.value, () => props.selectedItems.length, () => selectedAdUsers.value.length, () => loading.value], 
+watch([() => hasActualChanges.value, () => props.selectedItems.length, () => props.selectedAdUsers.length, () => loading.value], 
   ([hasChanges, itemsCount, usersCount, isLoading]) => {
     const isDisabled = isLoading || itemsCount === 0 || usersCount === 0 || !hasChanges
     console.log('🔘 [Apply Button State]', {
@@ -571,18 +478,23 @@ watch([() => hasActualChanges.value, () => props.selectedItems.length, () => sel
   },
   { immediate: true }
 )
-
+watch(() => props.selectedItems, (selectedItems) => {
+  // Check if there are any new items (not in original permissions)
+  const hasNewItems = selectedItems.some(item => {
+    // Handle server-root specially - it uses 'server-root' as nodeId but path is '/'
+    const nodeId = item.path === '/' ? 'server-root' : (item.id ? `report_${item.id}` : `folder_${item.path}`)
+    // Check both nodeId and folder_/ for server-root
+    return !props.originalPermissionIds.includes(nodeId) && 
+           !(item.path === '/' && props.originalPermissionIds.includes('folder_/'))
+  })
+  
+  if (hasNewItems && selectedRoles.value.length === 0) {
+    // If new items are selected and no roles are selected, automatically select Browser
+    selectedRoles.value = ['Browser']
+  }
+}, { deep: true })
 const loading = ref(false)
 const checkLoading = ref(false)
-
-// AD User Selection
-const selectedAdUsers = ref([])
-const adUsers = ref([])
-const adSearchQuery = ref('')
-const adLoading = ref(false)
-const adError = ref('')
-const showSearchResults = ref(false)
-let searchTimeout = null
 
 // Permissions Count by Role
 const permissionsCountByRole = ref({})
@@ -732,6 +644,32 @@ const availableRoles = [
   'Report Builder'
 ]
 
+const isAllSelected = computed(() => selectedRoles.value.length === availableRoles.length)
+
+const toggleDropdown = () => {
+  dropdownOpen.value = !dropdownOpen.value
+}
+
+const toggleRole = (role) => {
+  if (selectedRoles.value.includes(role)) {
+    selectedRoles.value = selectedRoles.value.filter(r => r !== role)
+  } else {
+    selectedRoles.value = [...selectedRoles.value, role]
+  }
+}
+
+const removeRole = (role) => {
+  selectedRoles.value = selectedRoles.value.filter(r => r !== role)
+}
+
+const toggleSelectAll = () => {
+  if (isAllSelected.value) {
+    selectedRoles.value = []
+  } else {
+    selectedRoles.value = [...availableRoles]
+  }
+}
+
 // Role translation mapping
 const getRoleText = (role) => {
   const roleKey = 'role' + role.replace(/\s+/g, '')
@@ -769,8 +707,15 @@ const originalPermissionsMap = computed(() => {
     
     // Find the nodeId for this permission
     if (permission.itemType === 'Folder') {
-      const nodeId = `folder_${permission.path}`
-      map.set(nodeId, roles)
+      const normalizedPath = normalizePath(path)
+      // Handle server root (path '/') specially - it uses 'server-root' as nodeId
+      if (normalizedPath === '/') {
+        map.set('server-root', roles)
+        map.set('folder_/', roles) // Also store with folder_/ for backward compatibility
+      } else {
+        const nodeId = `folder_${permission.path}`
+        map.set(nodeId, roles)
+      }
     } else if (permission.itemType === 'Report') {
       // Try to find report by ID first (most reliable, especially for Persian characters)
       let report = null
@@ -876,8 +821,13 @@ const hasActualRoleChanges = computed(() => {
     // This indicates items that originally had permissions but are now being removed
     if (props.selectedItems && props.selectedItems.length > 0) {
       for (const item of props.selectedItems) {
-        const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-        if (originalMap.has(nodeId) && (!props.itemRoles || !props.itemRoles.has(nodeId))) {
+        // Handle server-root specially - it uses 'server-root' as nodeId but path is '/'
+        const nodeId = item.path === '/' ? 'server-root' : (item.id ? `report_${item.id}` : `folder_${item.path}`)
+        // Check both the nodeId and folder_/ for server-root
+        const hasInOriginal = originalMap.has(nodeId) || (item.path === '/' && originalMap.has('folder_/'))
+        const hasInItemRoles = props.itemRoles && (props.itemRoles.has(nodeId) || (item.path === '/' && props.itemRoles.has('server-root')))
+        
+        if (hasInOriginal && !hasInItemRoles) {
           // This item originally had permissions but is no longer in itemRoles
           // This is a removal, so there's a change
           console.log('✅ [hasActualRoleChanges] Found removal: item in originalMap but not in itemRoles', {
@@ -892,9 +842,24 @@ const hasActualRoleChanges = computed(() => {
     return false
   }
   
+  // Helper function to get the nodeId for an item (handles server-root specially)
+  const getNodeIdForItem = (item) => {
+    if (item.path === '/') {
+      return 'server-root' // Server root uses 'server-root' as nodeId
+    }
+    return item.id ? `report_${item.id}` : `folder_${item.path}`
+  }
+  
   // Check each item in itemRoles to see if it's different from original
   for (const [nodeId, currentRoles] of props.itemRoles.entries()) {
-    const originalRoles = originalMap.get(nodeId) || []
+    // For server-root, check both 'server-root' and 'folder_/' in originalMap
+    let originalRoles = []
+    if (nodeId === 'server-root') {
+      // Check both keys for server-root
+      originalRoles = originalMap.get('server-root') || originalMap.get('folder_/') || []
+    } else {
+      originalRoles = originalMap.get(nodeId) || []
+    }
     
     // Normalize roles arrays for comparison (sort and compare)
     const normalizeRoles = (roles) => {
@@ -922,17 +887,33 @@ const hasActualRoleChanges = computed(() => {
   for (const [nodeId, originalRoles] of originalMap.entries()) {
     if (originalRoles && originalRoles.length > 0) {
       // If this item had original permissions but is not in itemRoles, it's a removal
-      if (!props.itemRoles.has(nodeId)) {
+      // Check both the nodeId and server-root mapping
+      // Also check if it has empty roles (which means removal)
+      const hasInItemRoles = props.itemRoles.has(nodeId) || 
+                            (nodeId === 'folder_/' && props.itemRoles.has('server-root'))
+      const hasEmptyRoles = (nodeId === 'folder_/' && props.itemRoles.has('server-root') && 
+                            (!props.itemRoles.get('server-root') || props.itemRoles.get('server-root').length === 0)) ||
+                            (props.itemRoles.has(nodeId) && 
+                            (!props.itemRoles.get(nodeId) || props.itemRoles.get(nodeId).length === 0))
+      
+      if (!hasInItemRoles || hasEmptyRoles) {
         // Check if this item is in selectedItems (meaning it's still selected but roles were removed)
         const itemExists = props.selectedItems && props.selectedItems.some(item => {
-          const itemNodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-          return itemNodeId === nodeId
+          const itemNodeId = item.path === '/' ? 'server-root' : (item.id ? `report_${item.id}` : `folder_${item.path}`)
+          return itemNodeId === nodeId || 
+                 (nodeId === 'folder_/' && itemNodeId === 'server-root') ||
+                 (nodeId === 'server-root' && itemNodeId === 'server-root')
         })
-        if (itemExists) {
+        // For server-root with empty roles, always detect as change even if not in selectedItems
+        const isServerRootWithEmptyRoles = (nodeId === 'folder_/' || nodeId === 'server-root') && hasEmptyRoles
+        if (itemExists || isServerRootWithEmptyRoles) {
           // Item is selected but not in itemRoles - this means all roles were removed
           console.log('✅ [hasActualRoleChanges] Found removal: item in originalMap and selectedItems but not in itemRoles', {
             nodeId,
-            originalRoles: originalRoles.join(',')
+            originalRoles: originalRoles.join(','),
+            hasEmptyRoles,
+            isServerRootWithEmptyRoles,
+            itemExists
           })
           return true
         }
@@ -945,13 +926,16 @@ const hasActualRoleChanges = computed(() => {
   // but might have been removed from itemRoles entirely
   if (props.markedForRemovalItems && props.markedForRemovalItems.length > 0) {
     for (const item of props.markedForRemovalItems) {
-      const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-      if (originalMap.has(nodeId)) {
-        const originalRoles = originalMap.get(nodeId) || []
+      // Handle server-root specially - it uses 'server-root' as nodeId but path is '/'
+      const nodeId = item.path === '/' ? 'server-root' : (item.id ? `report_${item.id}` : `folder_${item.path}`)
+      // Check both nodeId and folder_/ for server-root
+      const hasInOriginal = originalMap.has(nodeId) || (item.path === '/' && originalMap.has('folder_/'))
+      if (hasInOriginal) {
+        const originalRoles = originalMap.get(nodeId) || (item.path === '/' ? originalMap.get('folder_/') : []) || []
         if (originalRoles && originalRoles.length > 0) {
           // This item originally had permissions and is now marked for removal
           // Check if it's in itemRoles with empty array, or not in itemRoles at all
-          const currentRoles = props.itemRoles?.get(nodeId)
+          const currentRoles = props.itemRoles?.get(nodeId) || (item.path === '/' ? props.itemRoles?.get('server-root') : null)
           if (!currentRoles || currentRoles.length === 0) {
             // Item is marked for removal and has no roles (or empty array) - this is a change
             console.log('✅ [hasActualRoleChanges] Found removal: item in markedForRemovalItems with original permissions', {
@@ -1073,95 +1057,6 @@ const closeModal = () => {
 }
 
 
-// AD User Selection Functions
-const searchAdUsers = async () => {
-  // Clear previous timeout
-  if (searchTimeout) {
-    clearTimeout(searchTimeout)
-  }
-
-  const query = adSearchQuery.value.trim()
-  
-  if (query.length < 1) {
-    adUsers.value = []
-    return
-  }
-
-  // Debounce search - faster response
-  searchTimeout = setTimeout(async () => {
-    adLoading.value = true
-    adError.value = ''
-
-    try {
-      const adConfig = props.connectionInfo?.adConfig
-      
-      if (!adConfig) {
-        adError.value = 'Active Directory configuration is missing. Please check your backend .env file for LDAP settings, or reload the page.'
-        adLoading.value = false
-        console.warn('AD Config missing:', props.connectionInfo)
-        return
-      }
-
-      const response = await axios.post('/api/ad/search', {
-        ldapUrl: adConfig.ldapUrl,
-        bindDN: adConfig.bindDN,
-        bindPassword: adConfig.bindPassword,
-        searchBase: adConfig.searchBase,
-        searchFilter: query
-      })
-
-      if (response.data.success) {
-        adUsers.value = response.data.results || []
-        if (adUsers.value.length === 0) {
-          adError.value = 'No users or groups found'
-        }
-      } else {
-        adError.value = response.data.error || 'Failed to search users'
-      }
-    } catch (error) {
-      console.error('Error searching AD:', error)
-      const errorMsg = error.response?.data?.message || error.message || 'Failed to search Active Directory'
-      // Handle size limit exceeded more gracefully
-      if (errorMsg.includes('Size Limit Exceeded') || errorMsg.includes('SizeLimitExceeded')) {
-        adError.value = 'Too many results. Please be more specific in your search.'
-      } else {
-        adError.value = errorMsg
-      }
-    } finally {
-      adLoading.value = false
-    }
-  }, 300) // 300ms debounce - faster response
-}
-
-const clearAdSearch = () => {
-  adSearchQuery.value = ''
-  adUsers.value = []
-  adError.value = ''
-  showSearchResults.value = false
-}
-
-const selectAdUser = (user) => {
-  const index = selectedAdUsers.value.findIndex(u => u.name === user.name)
-  if (index > -1) {
-    // Already selected, remove it
-    selectedAdUsers.value.splice(index, 1)
-  } else {
-    // Not selected, add it
-    selectedAdUsers.value.push(user)
-  }
-  // Don't close results, let user continue selecting
-}
-
-const removeAdUser = (user) => {
-  const index = selectedAdUsers.value.findIndex(u => u.name === user.name)
-  if (index > -1) {
-    selectedAdUsers.value.splice(index, 1)
-  }
-}
-
-const isAdUserSelected = (user) => {
-  return selectedAdUsers.value.some(u => u.name === user.name)
-}
 
 // Computed: Filter group members
 const filteredGroupMembers = computed(() => {
@@ -1318,6 +1213,14 @@ const closeGroupMembersModal = () => {
 }
 
 const handleApplyPermissions = async () => {
+  // Validate: must have server connection
+  if (!props.connectionInfo?.serverUri) {
+    if (props.onError) {
+      props.onError('Server connection is required. Please select a server first.')
+    }
+    return
+  }
+  
   // Validate: must have actual changes
   if (!hasActualChanges.value) {
     if (props.onError) {
@@ -1328,13 +1231,13 @@ const handleApplyPermissions = async () => {
 
   // Get user names from AD selection
   let userNames = []
-  if (selectedAdUsers.value.length === 0) {
+  if (props.selectedAdUsers.length === 0) {
     if (props.onError) {
       props.onError('Please select at least one user from Active Directory')
     }
     return
   }
-  userNames = selectedAdUsers.value.map(u => u.name)
+  userNames = props.selectedAdUsers.map(u => u.name)
 
   // Check if new items have roles assigned in itemRoles
   if (props.newItems.length > 0) {
@@ -1357,7 +1260,10 @@ const handleApplyPermissions = async () => {
   const itemsRemovingAllRoles = [] // Items where all roles are removed (empty roles array)
   const markedForRemovalNodeIds = new Set()
   props.markedForRemovalItems.forEach(item => {
-    if (item.id) {
+    // Handle server-root specially
+    if (item.path === '/') {
+      markedForRemovalNodeIds.add('server-root')
+    } else if (item.id) {
       markedForRemovalNodeIds.add(`report_${item.id}`)
     } else if (item.path) {
       markedForRemovalNodeIds.add(`folder_${item.path}`)
@@ -1369,15 +1275,22 @@ const handleApplyPermissions = async () => {
     // We need to map nodeIds to actual items
     // Check both selectedItems and originalPermissionIds to find items
     props.itemRoles.forEach((roles, nodeId) => {
-      // Skip items marked for removal - they will be handled in the removal section
-      if (markedForRemovalNodeIds.has(nodeId)) {
+      // Check if this is an empty roles array (removal) - we need to process these even if marked for removal
+      const isEmptyRoles = !roles || roles.length === 0
+      
+      // Skip items marked for removal ONLY if they don't have empty roles
+      // Items with empty roles need to be processed to remove permissions
+      if (markedForRemovalNodeIds.has(nodeId) && !isEmptyRoles) {
         return
       }
       
       // Find the item that matches this nodeId
       // First try selectedItems
       let item = props.selectedItems.find(selectedItem => {
-        if (nodeId.startsWith('report_')) {
+        // Handle server-root specially
+        if (nodeId === 'server-root') {
+          return selectedItem.path === '/'
+        } else if (nodeId.startsWith('report_')) {
           const reportId = nodeId.replace('report_', '')
           return selectedItem.id === reportId
         } else if (nodeId.startsWith('folder_')) {
@@ -1396,6 +1309,17 @@ const handleApplyPermissions = async () => {
           if (report) {
             item = report
           }
+        }
+      }
+      
+      // If still not found and it's server-root with empty roles, construct it
+      // This handles the case where server-root has empty roles but might not be in selectedItems
+      if (!item && nodeId === 'server-root') {
+        item = {
+          type: 'Folder',
+          path: '/',
+          name: '/',
+          itemType: 'Folder'
         }
       }
       
@@ -1600,13 +1524,25 @@ const handleApplyPermissions = async () => {
             name: folderPath.split('/').pop(),
             itemType: 'Folder'
           }
+        } else if (nodeId === 'server-root') {
+          // Handle server-root - it represents the home page "/"
+          item = {
+            type: 'Folder',
+            path: '/',
+            name: '/',
+            itemType: 'Folder'
+          }
         }
       }
       
       // Only process if we found the item
       if (item) {
-        const originalRoles = originalMap.get(nodeId) || []
-        const hasOriginalPermissions = originalMap.has(nodeId)
+        // For server-root, check both 'server-root' and 'folder_/' in originalMap
+        const originalRoles = originalMap.get(nodeId) || 
+                              (nodeId === 'server-root' ? originalMap.get('folder_/') : []) || 
+                              []
+        const hasOriginalPermissions = originalMap.has(nodeId) || 
+                                     (nodeId === 'server-root' && originalMap.has('folder_/'))
         
         // Check if all roles are being removed (empty roles array)
         if (!roles || roles.length === 0) {
@@ -1699,22 +1635,25 @@ const handleApplyPermissions = async () => {
   // or where the comparison logic missed them
   if (props.selectedItems && props.selectedItems.length > 0 && props.itemRoles && props.itemRoles.size > 0) {
     props.selectedItems.forEach(selectedItem => {
-      // Skip if already processed
-      const nodeId = selectedItem.id ? `report_${selectedItem.id}` : `folder_${selectedItem.path}`
+      // Handle server-root specially - it uses 'server-root' as nodeId but path is '/'
+      const nodeId = selectedItem.path === '/' ? 'server-root' : (selectedItem.id ? `report_${selectedItem.id}` : `folder_${selectedItem.path}`)
       
       // Skip if already in itemsWithRoleChanges or marked for removal
       const alreadyProcessed = itemsWithRoleChanges.some(({ item }) => 
         (item.id && selectedItem.id && item.id === selectedItem.id) ||
         (item.path && selectedItem.path && item.path === selectedItem.path)
       )
-      if (alreadyProcessed || markedForRemovalNodeIds.has(nodeId)) {
+      if (alreadyProcessed || markedForRemovalNodeIds.has(nodeId) || (selectedItem.path === '/' && markedForRemovalNodeIds.has('folder_/'))) {
         return
       }
       
-      // Check if this item has role tags in itemRoles
-      if (props.itemRoles.has(nodeId)) {
-        const roles = props.itemRoles.get(nodeId)
-        const originalRoles = originalPermissionsMap.value.get(nodeId) || []
+      // Check if this item has role tags in itemRoles (handle server-root mapping)
+      const roles = props.itemRoles.get(nodeId) || (selectedItem.path === '/' ? props.itemRoles.get('server-root') : null)
+      if (roles) {
+        // Get original roles (check both nodeId and folder_/ for server-root)
+        const originalRoles = originalPermissionsMap.value.get(nodeId) || 
+                             (selectedItem.path === '/' ? originalPermissionsMap.value.get('folder_/') : []) || 
+                             []
         
         // Only add if roles are different and not empty
         if (roles && roles.length > 0) {
@@ -1976,7 +1915,7 @@ const handleApplyPermissions = async () => {
             
             // Get roles for this item from itemRoles only
             const nodeId = item.id ? `report_${item.id}` : `folder_${item.path}`
-            let rolesToApply = ['Browser'] // Default to Browser if no roles assigned
+            let rolesToApply = selectedRoles.value.length > 0 ? [...selectedRoles.value] : ['Browser'] // Default to Browser if no roles assigned
             
             if (props.itemRoles && props.itemRoles.has(nodeId)) {
               const itemRolesList = props.itemRoles.get(nodeId)
@@ -2060,7 +1999,7 @@ const handleApplyPermissions = async () => {
       // AUTO-REFRESH: Re-check permissions after successful changes
       // This updates the "original permissions" state so next operation works correctly
       // Only auto-refresh if exactly one user is selected (check permissions requires single user)
-      if (selectedAdUsers.value.length === 1) {
+      if (props.selectedAdUsers.length === 1) {
         setTimeout(async () => {
           await handleCheckPermissions()
         }, 1000) // Wait 1 second for server to propagate changes
@@ -2156,15 +2095,23 @@ const handleApplyPermissions = async () => {
 }
 
 const handleCheckPermissions = async () => {
+  // Validate: must have server connection
+  if (!props.connectionInfo?.serverUri) {
+    if (props.onError) {
+      props.onError('Server connection is required. Please select a server first.')
+    }
+    return
+  }
+  
   // Validate at least one user is selected
-  if (selectedAdUsers.value.length === 0) {
+  if (props.selectedAdUsers.length === 0) {
     if (props.onError) {
       props.onError('Please select at least one user to check permissions')
     }
     return
   }
 
-  const userNames = selectedAdUsers.value.map(u => u.name)
+  const userNames = props.selectedAdUsers.map(u => u.name)
   checkLoading.value = true
 
   try {
@@ -2250,11 +2197,17 @@ const handleCheckPermissions = async () => {
 if (typeof window !== 'undefined') {
   window.addEventListener('click', (e) => {
     const target = e.target
-    if (!target.closest('.user-search-container')) {
-      showSearchResults.value = false
+    if (!target.closest('.multi-select')) {
+      dropdownOpen.value = false
     }
   })
 }
+
+// Expose methods for parent component to call
+defineExpose({
+  handleApplyPermissions,
+  handleCheckPermissions
+})
 </script>
 
 <style scoped>

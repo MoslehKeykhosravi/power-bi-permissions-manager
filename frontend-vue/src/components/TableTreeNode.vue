@@ -54,13 +54,36 @@
           class="node-name-input"
           ref="nameInput"
         />
-        <span
-          v-else
-          class="node-name"
-          @dblclick="handleDoubleClick"
-        >
-          {{ getDisplayName() }}
-        </span>
+        <div v-else class="node-name-wrapper" @click.stop>
+          <span
+            class="node-name"
+            :class="{ 'clickable-server': nodeId === 'server-root' && serverList.length > 0 }"
+            @click="handleServerNameClick"
+            @dblclick="handleDoubleClick"
+          >
+            {{ getDisplayName() }}
+          </span>
+          <!-- Server Picker Dropdown (only for server-root) -->
+          <div
+            v-if="nodeId === 'server-root' && serverList.length > 0 && serverPickerOpen"
+            class="server-picker-dropdown"
+            @click.stop
+          >
+            <div
+              v-for="server in serverList"
+              :key="server"
+              @click="handleServerSelect(server)"
+              class="server-picker-item"
+              :class="{ 'active': server === currentServerUri }"
+              :title="server"
+            >
+              <svg v-if="server === currentServerUri" width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="check-icon">
+                <path d="M2 8L6 12L14 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="server-url-text">{{ server }}</span>
+            </div>
+          </div>
+        </div>
 
         <!-- Rename button -->
         <button
@@ -155,6 +178,8 @@
       :item-roles="itemRoles"
       :role-picker-open="rolePickerOpen"
       :level="level + 1"
+      :server-list="serverList"
+      :current-server-uri="currentServerUri"
       @toggle-expand="$emit('toggle-expand', $event)"
       @check="$emit('check', $event)"
       @start-editing="$emit('start-editing', $event)"
@@ -165,15 +190,17 @@
       @add-all-roles="(nodeId, roles) => $emit('add-all-roles', nodeId, roles)"
       @remove-role="(nodeId, role) => $emit('remove-role', nodeId, role)"
       @toggle-role-picker="$emit('toggle-role-picker', $event)"
+      @switch-server="$emit('switch-server', $event)"
     />
   </template>
 </template>
 
 <script setup>
-import { computed, watch, nextTick, ref } from 'vue'
+import { computed, watch, nextTick, ref, onMounted, onUnmounted } from 'vue'
 import PowerBIIcon from '../assets/PowerBIIcon.vue'
 import RDLIcon from '../assets/RDLIcon.vue'
 import FolderIcon from '../assets/FolderIcon.vue'
+import ServerIcon from '../assets/ServerIcon.vue'
 import { useI18n } from '../composables/useI18n'
 
 const { t } = useI18n()
@@ -226,12 +253,21 @@ const props = defineProps({
   level: {
     type: Number,
     default: 0
+  },
+  serverList: {
+    type: Array,
+    default: () => []
+  },
+  currentServerUri: {
+    type: String,
+    default: ''
   }
 })
 
-const emit = defineEmits(['toggle-expand', 'check', 'start-editing', 'update-editing', 'save-editing', 'cancel-editing', 'add-role', 'add-all-roles', 'remove-role', 'toggle-role-picker'])
+const emit = defineEmits(['toggle-expand', 'check', 'start-editing', 'update-editing', 'save-editing', 'cancel-editing', 'add-role', 'add-all-roles', 'remove-role', 'toggle-role-picker', 'switch-server'])
 
 const nameInput = ref(null)
+const serverPickerOpen = ref(false)
 
 const availableRoles = [
   'Browser',
@@ -265,32 +301,44 @@ const isEditing = computed(() => {
 const currentRoles = computed(() => {
   // First check itemRoles (user-edited roles) - these override permissions data
   if (props.itemRoles && props.itemRoles.has(props.nodeId)) {
-    return props.itemRoles.get(props.nodeId)
+    const roles = props.itemRoles.get(props.nodeId)
+    // Return roles if they exist (even if empty array)
+    if (roles !== null && roles !== undefined) {
+      return Array.isArray(roles) ? roles : []
+    }
   }
   
   // Then check permissionsMap (from checked permissions)
   if (props.permissionsMap && props.permissionsMap.size > 0) {
-    const path = props.node.type === 'folder' 
-      ? props.node.path 
-      : props.node.path || props.node.fullPath || ''
-    // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
-    const normalizePath = (p) => {
-      return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
-    }
-    const normalizedPath = normalizePath(path)
-    // Try exact match first
-    let roles = props.permissionsMap.get(normalizedPath)
-    // If not found, try case-insensitive match (but preserve Unicode)
-    if (!roles) {
-      for (const [mapPath, mapRoles] of props.permissionsMap.entries()) {
-        if (normalizePath(mapPath) === normalizedPath) {
-          roles = mapRoles
-          break
+    // Handle server-root specially - it represents the home page "/"
+    if (props.nodeId === 'server-root') {
+      const roles = props.permissionsMap.get('/')
+      if (roles && roles.length > 0) {
+        return roles
+      }
+    } else {
+      const path = props.node.type === 'folder' 
+        ? props.node.path 
+        : props.node.path || props.node.fullPath || ''
+      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+      const normalizePath = (p) => {
+        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+      }
+      const normalizedPath = normalizePath(path)
+      // Try exact match first
+      let roles = props.permissionsMap.get(normalizedPath)
+      // If not found, try case-insensitive match (but preserve Unicode)
+      if (!roles) {
+        for (const [mapPath, mapRoles] of props.permissionsMap.entries()) {
+          if (normalizePath(mapPath) === normalizedPath) {
+            roles = mapRoles
+            break
+          }
         }
       }
-    }
-    if (roles && roles.length > 0) {
-      return roles
+      if (roles && roles.length > 0) {
+        return roles
+      }
     }
   }
   
@@ -329,7 +377,7 @@ watch(isEditing, (newVal) => {
 
 const getIconComponent = () => {
   if (props.node.type === 'server') {
-    return null
+    return ServerIcon
   } else if (props.node.type === 'folder') {
     return FolderIcon
   } else if (props.node.nodeType === 'report' && props.node.type && props.node.type.includes('PBIX')) {
@@ -341,7 +389,7 @@ const getIconComponent = () => {
 
 const getDisplayName = () => {
   if (props.node.type === 'server') {
-    return 'Server'
+    return props.node.name || 'Server'
   } else if (props.node.type === 'folder') {
     return props.nodeId.split('_')[1].split('/').pop()
   } else if (props.node.nodeType === 'report') {
@@ -369,7 +417,12 @@ const handleCheckChange = (event) => {
   })
 }
 
-const handleDoubleClick = () => {
+const handleDoubleClick = (event) => {
+  // Prevent double-click from opening server picker
+  if (props.nodeId === 'server-root' && props.serverList.length > 0) {
+    event.stopPropagation()
+    return
+  }
   if (props.nodeId !== 'server-root') {
     emit('start-editing', props.nodeId)
   }
@@ -399,6 +452,32 @@ const getRoleText = (role) => {
   const roleKey = 'role' + role.replace(/\s+/g, '')
   return t(roleKey) || role
 }
+
+const handleServerNameClick = () => {
+  if (props.nodeId === 'server-root' && props.serverList.length > 0) {
+    serverPickerOpen.value = !serverPickerOpen.value
+  }
+}
+
+const handleServerSelect = (serverUri) => {
+  serverPickerOpen.value = false
+  emit('switch-server', serverUri)
+}
+
+// Close server picker when clicking outside
+const handleClickOutside = (event) => {
+  if (serverPickerOpen.value && !event.target.closest('.node-name-wrapper')) {
+    serverPickerOpen.value = false
+  }
+}
+
+// Add click outside listener
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <style scoped>
@@ -585,12 +664,36 @@ const getRoleText = (role) => {
   justify-content: center;
 }
 
-.node-name {
+.node-name-wrapper {
   flex: 1;
+  position: relative;
+}
+
+.node-name {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-color);
   cursor: default;
+}
+
+.node-name.clickable-server {
+  cursor: pointer;
+  color: #2196f3;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  transition: color 0.2s;
+}
+
+.node-name.clickable-server:hover {
+  color: #1976d2;
+}
+
+.dark-mode .node-name.clickable-server {
+  color: #64b5f6;
+}
+
+.dark-mode .node-name.clickable-server:hover {
+  color: #90caf9;
 }
 
 .node-name-input {
@@ -800,6 +903,77 @@ const getRoleText = (role) => {
   text-align: center;
   padding: 12px;
   color: #999;
+}
+
+.server-picker-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+  min-width: 400px;
+  max-width: 800px;
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.dark-mode .server-picker-dropdown {
+  background: #2c2c2c;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.server-picker-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-color);
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.server-picker-item:hover {
+  background: #f5f5f5;
+}
+
+.dark-mode .server-picker-item:hover {
+  background: #3a3a3a;
+}
+
+.server-picker-item.active {
+  background: #e3f2fd;
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.dark-mode .server-picker-item.active {
+  background: #1a2332;
+  color: #64b5f6;
+}
+
+.server-picker-item .check-icon {
+  flex-shrink: 0;
+  color: #4caf50;
+}
+
+.dark-mode .server-picker-item .check-icon {
+  color: #66bb6a;
+}
+
+.server-picker-item .server-url-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
 

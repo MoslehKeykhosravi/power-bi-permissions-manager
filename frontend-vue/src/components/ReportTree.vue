@@ -1,14 +1,5 @@
 <template>
   <div class="report-tree">
-    <div class="tree-header">
-      <h2>
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M3 4C3 3.44772 3.44772 3 4 3H8.58579C8.851 3 9.10536 3.10536 9.29289 3.29289L11 5H16C16.5523 5 17 5.44772 17 6V15C17 15.5523 16.5523 16 16 16H4C3.44772 16 3 15.5523 3 15V4Z" fill="currentColor"/>
-        </svg>
-        {{ t('reportsAndFolders') }}
-      </h2>
-    </div>
-
     <!-- Search and Quick Actions Row -->
     <div class="search-and-actions-row">
       <!-- Search Box -->
@@ -110,10 +101,7 @@
 
     <!-- Table View -->
     <div class="tree-container">
-      <div v-if="Object.keys(treeData.children).length === 0" class="empty-state">
-        {{ searchText ? t('noMatch') : t('noReports') }}
-      </div>
-      <div v-else class="table-view-wrapper">
+      <div class="table-view-wrapper">
         <table class="report-table">
           <thead>
             <tr>
@@ -122,11 +110,11 @@
             </tr>
           </thead>
           <tbody>
+            <!-- Server Root Node (renders children recursively when expanded) -->
             <TableTreeNode
-              v-for="(childNode, key) in treeData.children"
-              :key="getChildNodeId(childNode, key)"
-              :node="childNode"
-              :node-id="getChildNodeId(childNode, key)"
+              :key="'server-root'"
+              :node="treeData"
+              node-id="server-root"
               :expanded="expandedSet"
               :checked="checkedSet"
               :marked-for-removal="markedForRemovalSet"
@@ -137,6 +125,8 @@
               :item-roles="itemRoles"
               :role-picker-open="rolePickerOpen"
               :level="0"
+              :server-list="serverList"
+              :current-server-uri="connectionInfo?.serverUri"
               @toggle-expand="handleToggleExpand"
               @check="handleCheck"
               @start-editing="startEditing"
@@ -147,7 +137,24 @@
               @add-all-roles="handleAddAllRoles"
               @remove-role="handleRemoveRole"
               @toggle-role-picker="handleToggleRolePicker"
+              @switch-server="handleServerSwitch"
             />
+            <!-- Empty state message when no reports and not searching -->
+            <tr v-if="Object.keys(treeData.children).length === 0 && !searchText" class="empty-state-row">
+              <td colspan="2" class="empty-state-cell">
+                <div class="empty-state">
+                  {{ t('noReports') || 'No reports found' }}
+                </div>
+              </td>
+            </tr>
+            <!-- No match message when searching -->
+            <tr v-if="Object.keys(treeData.children).length === 0 && searchText" class="empty-state-row">
+              <td colspan="2" class="empty-state-cell">
+                <div class="empty-state">
+                  {{ t('noMatch') || 'No matches found' }}
+                </div>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -190,11 +197,19 @@ const props = defineProps({
   onRoleChanges: {
     type: Function,
     default: null
+  },
+  serverList: {
+    type: Array,
+    default: () => []
+  },
+  onServerSwitch: {
+    type: Function,
+    default: null
   }
 })
 
 const searchText = ref('')
-const expanded = ref(['server-root'])
+const expanded = ref(['server-root']) // Default to expanded (server-root expanded)
 const checked = ref([])
 const markedForRemoval = ref([]) // Items marked with red X for removal
 const originalPermissions = ref([]) // Items user originally had access to (from Check Permissions)
@@ -207,7 +222,7 @@ const rolePickerOpen = ref(null) // Track which node has role picker open
 const permissionsMap = ref(new Map()) // Map of path -> roles from permissions data
 
 const serverAddress = computed(() => {
-  return props.connectionInfo?.serverUri || 'Report Server'
+  return props.connectionInfo?.serverUri || (props.serverList.length > 0 ? 'Select server' : 'Report Server')
 })
 
 const expandedSet = computed(() => new Set(expanded.value))
@@ -372,15 +387,18 @@ watch(() => props.reports, () => {
   markedForRemoval.value = []
   originalPermissions.value = []
   itemRoles.value = new Map()
-  expanded.value = ['server-root']
+  expanded.value = ['server-root'] // Default to expanded (server-root expanded)
 }, { deep: false })
 
 // Clear itemRoles and permissionsMap when no items are selected
 // Also ensure all selected items have Browser role
 watch(() => checked.value, (newChecked) => {
-  // If no items are checked (except server-root), clear all itemRoles and permissionsMap
+  // Check if server-root is checked
+  const isServerRootChecked = newChecked.includes('server-root')
   const checkedItems = newChecked.filter(id => id !== 'server-root')
-  if (checkedItems.length === 0) {
+  
+  if (checkedItems.length === 0 && !isServerRootChecked) {
+    // No items checked at all
     itemRoles.value = new Map()
     // Also clear permissionsMap so no roles are displayed in the role access column
     permissionsMap.value = new Map()
@@ -388,6 +406,14 @@ watch(() => checked.value, (newChecked) => {
       props.onRoleChanges(new Map())
     }
   } else {
+    // Ensure server-root has at least Browser role if checked
+    if (isServerRootChecked && !itemRoles.value.has('server-root')) {
+      // Check if server-root has roles in permissionsMap (from checked permissions)
+      // Server-root represents the home page "/"
+      const serverRoles = permissionsMap.value.get('/') || ['Browser']
+      itemRoles.value.set('server-root', serverRoles)
+    }
+    
     // Ensure all checked items have at least Browser role in itemRoles
     checkedItems.forEach(nodeId => {
       if (!itemRoles.value.has(nodeId)) {
@@ -434,7 +460,7 @@ watch(searchText, () => {
   if (searchText.value.trim()) {
     expanded.value = [...allNodeIds.value]
   } else {
-    expanded.value = ['server-root']
+    expanded.value = ['server-root'] // Default to expanded (server-root expanded)
   }
 })
 
@@ -449,9 +475,34 @@ watch(autoSelectParents, () => {
       parentIds.forEach(id => checkedSet.add(id))
     })
 
+    // Always check server-root when auto-select is enabled
+    checkedSet.add('server-root')
+
     checked.value = Array.from(checkedSet)
   }
 })
+
+// Ensure server-root is checked when auto-select is enabled and any item is checked
+watch([checked, autoSelectParents], () => {
+  if (autoSelectParents.value && checked.value.length > 0) {
+    const checkedSet = new Set(checked.value)
+    const hasServerRoot = checkedSet.has('server-root')
+    
+    if (!hasServerRoot) {
+      checkedSet.add('server-root')
+      checked.value = Array.from(checkedSet)
+      
+      // Auto-add Browser role for server-root if not already set
+      if (!itemRoles.value.has('server-root')) {
+        const serverRoles = permissionsMap.value.get('/') || ['Browser']
+        itemRoles.value.set('server-root', serverRoles)
+        if (props.onRoleChanges) {
+          props.onRoleChanges(new Map(itemRoles.value))
+        }
+      }
+    }
+  }
+}, { deep: true })
 
 // Clean up stale checked items that don't exist in current tree
 watch(allNodeIds, () => {
@@ -503,9 +554,18 @@ watch(() => props.permissionsData, (newPermissions) => {
     }
     
     if (permission.itemType === 'Folder') {
-      // Add folder ID
-      const folderId = `folder_${permission.path}`
-      newCheckedIds.push(folderId)
+      // Handle server root (path '/') specially - it uses 'server-root' as nodeId
+      if (normalizedPath === '/') {
+        newCheckedIds.push('server-root')
+        // Also store in permissionsMap with '/' key
+        if (roles.length > 0) {
+          newPermissionsMap.set('/', roles)
+        }
+      } else {
+        // Add folder ID for regular folders
+        const folderId = `folder_${permission.path}`
+        newCheckedIds.push(folderId)
+      }
     } else if (permission.itemType === 'Report') {
       // Try to find report by ID first (most reliable, especially for Persian characters)
       let report = null
@@ -605,6 +665,40 @@ watch(() => props.permissionsData, (newPermissions) => {
   checked.value = newCheckedIds
   // Store as original permissions (what user currently has)
   originalPermissions.value = [...newCheckedIds]
+  
+  // Also set itemRoles for checked items (especially server-root)
+  const newItemRoles = new Map()
+  newCheckedIds.forEach(nodeId => {
+    if (nodeId === 'server-root') {
+      // Get roles from permissionsMap using '/' key
+      const roles = newPermissionsMap.get('/') || []
+      if (roles.length > 0) {
+        newItemRoles.set('server-root', roles)
+      }
+    } else {
+      // For other items, get roles from permissionsMap
+      const node = findNodeById(nodeId)
+      if (node) {
+        const path = node.type === 'folder' 
+          ? node.path 
+          : node.path || node.fullPath || ''
+        const normalizePath = (p) => {
+          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+        }
+        const normalizedPath = normalizePath(path)
+        const roles = newPermissionsMap.get(normalizedPath) || []
+        if (roles.length > 0) {
+          newItemRoles.set(nodeId, roles)
+        }
+      }
+    }
+  })
+  itemRoles.value = newItemRoles
+  
+  // Notify parent of role changes
+  if (props.onRoleChanges) {
+    props.onRoleChanges(new Map(itemRoles.value))
+  }
 }, { deep: true })
 
 // Notify parent of selected items (excluding marked for removal)
@@ -615,14 +709,22 @@ watch([checked, markedForRemoval, originalPermissions, itemRoles], () => {
   // Items to keep/add (checked but not marked, excluding unchanged original permissions)
   const selectedItems = checked.value
     .filter(id => {
-      if (id === 'server-root') return false
       if (markedSet.has(id)) return false // Exclude marked
+      // Include server-root if it's checked (represents home page "/")
+      if (id === 'server-root') return true
       // Only include if it's NEW (not in original) or if we want to keep all checked
       // For optimization, we could filter out unchanged items here
       return true
     })
     .map(id => {
-      if (id.startsWith('report_')) {
+      // Handle server-root as home page "/"
+      if (id === 'server-root') {
+        return {
+          type: 'Folder',
+          path: '/',
+          name: '/'
+        }
+      } else if (id.startsWith('report_')) {
         const reportId = id.replace('report_', '')
         return props.reports.find(r => r.id === reportId)
       } else if (id.startsWith('folder_')) {
@@ -639,9 +741,15 @@ watch([checked, markedForRemoval, originalPermissions, itemRoles], () => {
 
   // Items marked for removal
   const markedItems = markedForRemoval.value
-    .filter(id => id !== 'server-root')
     .map(id => {
-      if (id.startsWith('report_')) {
+      // Handle server-root specially - it represents the home page "/"
+      if (id === 'server-root') {
+        return {
+          type: 'Folder',
+          path: '/',
+          name: '/'
+        }
+      } else if (id.startsWith('report_')) {
         const reportId = id.replace('report_', '')
         return props.reports.find(r => r.id === reportId)
       } else if (id.startsWith('folder_')) {
@@ -924,6 +1032,15 @@ const handleCheck = ({ nodeId, node, isChecked, isMarkedForRemoval }) => {
             }
           }
         })
+        // Always check server-root when auto-select is enabled
+        if (!originalSet.has('server-root')) {
+          checkedSet.add('server-root')
+          // Auto-add Browser role for server-root if not already set
+          if (!itemRoles.value.has('server-root')) {
+            const serverRoles = permissionsMap.value.get('/') || ['Browser']
+            itemRoles.value.set('server-root', serverRoles)
+          }
+        }
       }
       
       // Notify parent of role changes
@@ -947,7 +1064,7 @@ const expandAll = () => {
 }
 
 const collapseAll = () => {
-  expanded.value = ['server-root']
+  expanded.value = ['server-root'] // Collapse all except server-root (keep it expanded)
   lastAction.value = 'collapse'
 }
 
@@ -988,6 +1105,10 @@ const toggleAllType = (type, shouldSelect) => {
               typeIds.push(id)
             }
           })
+          // Always include server-root when auto-select is enabled
+          if (!typeIds.includes('server-root')) {
+            typeIds.push('server-root')
+          }
         }
       }
     })
@@ -1139,30 +1260,35 @@ const handleAddRole = (nodeId, role) => {
   
   // If not in itemRoles, get from permissionsMap based on node path
   if (currentRoles === null || currentRoles === undefined) {
-    const node = findNodeById(nodeId)
-    if (node) {
-      const path = node.type === 'folder' 
-        ? node.path 
-        : node.path || node.fullPath || ''
-      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
-      const normalizePath = (p) => {
-        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
-      }
-      const normalizedPath = normalizePath(path)
-      // Try exact match first
-      currentRoles = permissionsMap.value.get(normalizedPath)
-      // If not found, try case-insensitive match (but preserve Unicode)
-      if (!currentRoles) {
-        for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
-          if (normalizePath(mapPath) === normalizedPath) {
-            currentRoles = mapRoles
-            break
+    // Handle server-root specially - it represents the home page "/"
+    if (nodeId === 'server-root') {
+      currentRoles = permissionsMap.value.get('/') || []
+    } else {
+      const node = findNodeById(nodeId)
+      if (node) {
+        const path = node.type === 'folder' 
+          ? node.path 
+          : node.path || node.fullPath || ''
+        // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+        const normalizePath = (p) => {
+          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+        }
+        const normalizedPath = normalizePath(path)
+        // Try exact match first
+        currentRoles = permissionsMap.value.get(normalizedPath)
+        // If not found, try case-insensitive match (but preserve Unicode)
+        if (!currentRoles) {
+          for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+            if (normalizePath(mapPath) === normalizedPath) {
+              currentRoles = mapRoles
+              break
+            }
           }
         }
+        currentRoles = currentRoles || []
+      } else {
+        currentRoles = []
       }
-      currentRoles = currentRoles || []
-    } else {
-      currentRoles = []
     }
   }
   
@@ -1173,22 +1299,21 @@ const handleAddRole = (nodeId, role) => {
   
   // Add role if not already present
   if (!currentRoles.includes(role)) {
-    itemRoles.value.set(nodeId, [...currentRoles, role])
+    const newRoles = [...currentRoles, role]
+    itemRoles.value.set(nodeId, newRoles)
     // If item was marked for removal, unmark it since we're adding a role back
     const markedSet = new Set(markedForRemoval.value)
     if (markedSet.has(nodeId)) {
       markedSet.delete(nodeId)
       markedForRemoval.value = Array.from(markedSet)
     }
-    
-    // Automatically check/select the object when a role is added
+    // Automatically select the object when a role is added
     const checkedSet = new Set(checked.value)
-    if (!checkedSet.has(nodeId) && nodeId !== 'server-root') {
+    if (!checkedSet.has(nodeId)) {
       checkedSet.add(nodeId)
       checked.value = Array.from(checkedSet)
     }
-    
-    // Notify parent of role changes
+    // Notify parent of role changes immediately
     if (props.onRoleChanges) {
       props.onRoleChanges(new Map(itemRoles.value))
     }
@@ -1253,14 +1378,12 @@ const handleAddAllRoles = (nodeId, rolesToAdd) => {
     markedSet.delete(nodeId)
     markedForRemoval.value = Array.from(markedSet)
   }
-  
-  // Automatically check/select the object when roles are added
+  // Automatically select the object when roles are added
   const checkedSet = new Set(checked.value)
-  if (!checkedSet.has(nodeId) && nodeId !== 'server-root') {
+  if (!checkedSet.has(nodeId)) {
     checkedSet.add(nodeId)
     checked.value = Array.from(checkedSet)
   }
-  
   // Notify parent of role changes
   if (props.onRoleChanges) {
     props.onRoleChanges(new Map(itemRoles.value))
@@ -1302,30 +1425,35 @@ const handleRemoveRole = (nodeId, role) => {
   
   // If not in itemRoles, get from permissionsMap based on node path
   if (currentRoles === null || currentRoles === undefined) {
-    const node = findNodeById(nodeId)
-    if (node) {
-      const path = node.type === 'folder' 
-        ? node.path 
-        : node.path || node.fullPath || ''
-      // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
-      const normalizePath = (p) => {
-        return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
-      }
-      const normalizedPath = normalizePath(path)
-      // Try exact match first
-      currentRoles = permissionsMap.value.get(normalizedPath)
-      // If not found, try case-insensitive match (but preserve Unicode)
-      if (!currentRoles) {
-        for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
-          if (normalizePath(mapPath) === normalizedPath) {
-            currentRoles = mapRoles
-            break
+    // Handle server-root specially - it represents the home page "/"
+    if (nodeId === 'server-root') {
+      currentRoles = permissionsMap.value.get('/') || []
+    } else {
+      const node = findNodeById(nodeId)
+      if (node) {
+        const path = node.type === 'folder' 
+          ? node.path 
+          : node.path || node.fullPath || ''
+        // Normalize path: handle Unicode properly, don't use toLowerCase on Persian chars
+        const normalizePath = (p) => {
+          return p.replace(/\\/g, '/').replace(/\/+/g, '/').trim()
+        }
+        const normalizedPath = normalizePath(path)
+        // Try exact match first
+        currentRoles = permissionsMap.value.get(normalizedPath)
+        // If not found, try case-insensitive match (but preserve Unicode)
+        if (!currentRoles) {
+          for (const [mapPath, mapRoles] of permissionsMap.value.entries()) {
+            if (normalizePath(mapPath) === normalizedPath) {
+              currentRoles = mapRoles
+              break
+            }
           }
         }
+        currentRoles = currentRoles || []
+      } else {
+        currentRoles = []
       }
-      currentRoles = currentRoles || []
-    } else {
-      currentRoles = []
     }
   }
   
@@ -1375,6 +1503,12 @@ const handleRemoveRole = (nodeId, role) => {
 
 const handleToggleRolePicker = (nodeId) => {
   rolePickerOpen.value = rolePickerOpen.value === nodeId ? null : nodeId
+}
+
+const handleServerSwitch = (serverUri) => {
+  if (props.onServerSwitch) {
+    props.onServerSwitch(serverUri)
+  }
 }
 </script>
 
@@ -1659,14 +1793,15 @@ const handleToggleRolePicker = (nodeId) => {
   padding: 12px 16px;
   text-align: left;
   font-weight: 400;
-  font-size: 0.95rem;
-  color: #4a5568;
-  text-transform: none;
-  letter-spacing: normal;
+  font-size: 0.875rem;
+  font-family: sans-serif;
+  color: #6b7280;
+  text-transform: capitalize;
+  letter-spacing: 0;
 }
 
 .dark-mode .report-table th {
-  color: #cbd5e0;
+  color: #9ca3af;
 }
 
 .object-name-header {
@@ -1688,6 +1823,20 @@ const handleToggleRolePicker = (nodeId) => {
 .empty-state {
   padding: 2rem;
   text-align: center;
+  color: #999;
+}
+
+.empty-state-row {
+  border: none;
+}
+
+.empty-state-cell {
+  padding: 2rem;
+  text-align: center;
+  color: #999;
+}
+
+.dark-mode .empty-state-cell {
   color: #999;
 }
 
